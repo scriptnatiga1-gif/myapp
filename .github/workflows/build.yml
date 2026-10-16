@@ -2,23 +2,27 @@ name: Build APK
 on: [push]
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - name: Install dependencies
+      - name: Install system deps
         run: |
           sudo apt update
-          sudo apt install -y openjdk-17-jdk zip unzip
-          pip install --upgrade pip
-          pip install buildozer cython==0.29.33
+          sudo apt install -y openjdk-17-jdk zip unzip libffi-dev libssl-dev
+          pip install cython==0.29.33 buildozer
+      - name: Accept licenses and fix aidl
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "build-tools;33.0.2" "platform-tools" || true
+          sudo apt install -y aidl || true
       - name: Build APK
-        run: buildozer android debug
+        run: |
+          buildozer android debug
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
-          name: mansour-apk
+          name: Mansour-APK
           path: bin/*.apk
