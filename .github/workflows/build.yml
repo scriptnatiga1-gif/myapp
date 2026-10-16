@@ -4,25 +4,24 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       - name: Install system deps
         run: |
           sudo apt update
-          sudo apt install -y openjdk-17-jdk zip unzip libffi-dev libssl-dev
+          sudo apt install -y openjdk-17-jdk zip unzip libffi-dev libssl-dev libsqlite3-dev aidl
           pip install cython==0.29.33 buildozer
-      - name: Accept licenses and fix aidl
+      - name: Accept licenses
         run: |
           yes | sdkmanager --licenses || true
-          sdkmanager "build-tools;33.0.2" "platform-tools" || true
-          sudo apt install -y aidl || true
+          sdkmanager "build-tools;33.0.2" "platform-tools" "platforms;android-33" || true
       - name: Build APK
         run: |
           buildozer android debug
       - name: Upload APK
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Mansour-APK
           path: bin/*.apk
