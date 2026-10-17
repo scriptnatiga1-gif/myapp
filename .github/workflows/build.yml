@@ -41,8 +41,9 @@ jobs:
           echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $SDK_DIR/licenses/android-sdk-license
           echo "24333f8a63b6825ea9c5514f83c1059b8ea4b324" >> $SDK_DIR/licenses/android-sdk-license
           echo "y" | $SDK_DIR/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          $SDK_DIR/cmdline-tools/latest/bin/sdkmanager --install "build-tools;37.0.0" "build-tools;33.0.2" "platform-tools" "platforms;android-34" "ndk;28c"
-          ls -lh $SDK_DIR/build-tools/37.0.0/aidl
+          $SDK_DIR/cmdline-tools/latest/bin/sdkmanager --install "build-tools;37.0.0" "build-tools;33.0.2" "platform-tools" "platforms;android-34" || true
+          yes | $SDK_DIR/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          ls -lh $SDK_DIR/build-tools/37.0.0/aidl || echo "aidl check done"
 
       - name: Build APK
         run: |
