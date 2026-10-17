@@ -34,7 +34,7 @@ jobs:
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
           unzip -q cmdline-tools.zip
           mkdir -p $SDK_DIR/cmdline-tools/latest
-          cp -r cmdline-tools/* $SDK_DIR/cmdline-tools/latest/ 2>/dev/null || cp -r cmdline-tools/lib $SDK_DIR/cmdline-tools/latest/ && cp -r cmdline-tools/NOTICE.txt $SDK_DIR/cmdline-tools/latest/ 2>/dev/null || true
+          cp -r cmdline-tools/* $SDK_DIR/cmdline-tools/latest/ 2>/dev/null || true
           mkdir -p $SDK_DIR/tools/bin
           ln -sf $SDK_DIR/cmdline-tools/latest/bin/sdkmanager $SDK_DIR/tools/bin/sdkmanager
           ln -sf $SDK_DIR/cmdline-tools/latest/bin/avdmanager $SDK_DIR/tools/bin/avdmanager || true
@@ -42,9 +42,7 @@ jobs:
           echo "count=0" > ~/.android/repositories.cfg
           export PATH=$SDK_DIR/cmdline-tools/latest/bin:$PATH
           yes | sdkmanager --licenses || true
-          sdkmanager --install "build-tools;33.0.2" "platform-tools" "platforms;android-33" "ndk;25b" || true
-          ls -l $SDK_DIR/tools/bin/
-          ls -l $SDK_DIR/cmdline-tools/latest/bin/
+          sdkmanager --install "build-tools;33.0.2" "platform-tools" "platforms;android-33" "ndk;28c" || true
 
       - name: Build APK
         run: |
