@@ -7,46 +7,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Build APK with Buildozer Action - FIXED SDKMANAGER
+        uses: ArtemSBulgakov/buildozer-action@v1
+        id: buildozer
         with:
-          python-version: '3.10'
-
-      - name: Install system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y openjdk-17-jdk python3-pip zip unzip wget libffi-dev libssl-dev libsqlite3-dev
-          pip3 install --upgrade pip
-          pip3 install Cython==0.29.33 buildozer
-
-      - name: Fix sdkmanager not found - install cmdline-tools
-        run: |
-          export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
-          mkdir -p $ANDROID_HOME/cmdline-tools
-          cd /tmp
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
-          unzip -q cmdline-tools.zip
-          mkdir -p $ANDROID_HOME/cmdline-tools/latest
-          mv cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/ 2>/dev/null || mv cmdline-tools/lib $ANDROID_HOME/cmdline-tools/latest/ && mv cmdline-tools/NOTICE.txt $ANDROID_HOME/cmdline-tools/latest/ 2>/dev/null || true
-          mkdir -p $ANDROID_HOME/tools/bin
-          ln -sf $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager $ANDROID_HOME/tools/bin/sdkmanager
-          ln -sf $ANDROID_HOME/cmdline-tools/latest/bin/avdmanager $ANDROID_HOME/tools/bin/avdmanager || true
-          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
-          mkdir -p ~/.android
-          echo "count=0" > ~/.android/repositories.cfg
-          yes | sdkmanager --licenses || true
-          sdkmanager --install "build-tools;33.0.2" "platform-tools" "platforms;android-33" "ndk;25b" || true
-          sdkmanager --list | grep build-tools || true
-
-      - name: Build APK
-        run: |
-          export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
-          export ANDROID_SDK_ROOT=$ANDROID_HOME
-          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/build-tools/33.0.2:$ANDROID_HOME/platform-tools:$PATH
-          buildozer android debug
+          command: buildozer android debug
+          buildozer_version: master
+          workdir: .
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Mansour-APK-FIXED
+          name: Mansour-APK-FIXED-SDKMANAGER
           path: bin/*.apk
+          if-no-files-found: error
