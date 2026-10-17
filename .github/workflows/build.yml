@@ -16,7 +16,8 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y zip unzip libffi-dev libssl-dev libbz2-dev
-          pip install Cython==0.29.33 buildozer
+          pip install Cython==0.29.33
+          pip install https://github.com/kivy/buildozer/archive/master.zip
       - name: Accept Android Licenses
         run: |
           mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
