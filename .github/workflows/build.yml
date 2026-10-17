@@ -11,12 +11,12 @@ jobs:
           distribution: 'temurin'
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.8'
+          python-version: '3.10'
       - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y zip unzip libffi-dev libssl-dev libbz2-dev
-          pip install Cython==0.29.33
+          pip install Cython==0.29.36
           pip install https://github.com/kivy/buildozer/archive/master.zip
       - name: Accept Android Licenses
         run: |
