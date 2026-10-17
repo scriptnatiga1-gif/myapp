@@ -1,32 +1,19 @@
 name: Build APK
 on: [push]
+
 jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      
+      - name: Build APK with Buildozer
+        uses: digreatbrian/buildozer-action@v2
         with:
-          java-version: '8'
-          distribution: 'temurin'
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y zip unzip libffi-dev libssl-dev libbz2-dev
-          pip install Cython==0.29.36
-          pip install https://github.com/kivy/buildozer/archive/master.zip
-      - name: Build APK
-        run: |
-          buildozer android debug || true
-          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
-          echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-          echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-          echo "24333f8a63b6825ea9c5514f83c1051b8ea11e4b" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-          echo "y" | ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          buildozer android debug
+          python-version: python3.10
+          command: buildozer android debug
+          buildozer_version: master
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
