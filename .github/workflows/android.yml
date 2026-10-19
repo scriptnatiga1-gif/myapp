@@ -12,6 +12,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 120
 
     steps:
       - name: Checkout source
@@ -34,45 +35,106 @@ jobs:
           sudo apt-get install -y \
             git zip unzip \
             python3-pip python3-venv \
-            autoconf automake libtool pkg-config \
+            autoconf automake autopoint gettext \
+            libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev \
-            libtinfo5 cmake libffi-dev libssl-dev
+            libtinfo5 cmake libffi-dev libssl-dev \
+            build-essential
 
-      - name: Install Buildozer
+      - name: Install Buildozer and build dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install buildozer cython==0.29.36
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install \
+            "cython==0.29.34" \
+            legacy-cgi
+          python -m pip install \
+            "git+https://github.com/kivy/buildozer.git"
 
-      - name: Verify configuration
+      - name: Configure python-for-android
         run: |
-          echo "=== Android configuration ==="
-          grep -E '^(android\.|requirements|source\.dir|package\.)' buildozer.spec
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("buildozer.spec")
+          if not path.exists():
+              raise SystemExit("ERROR: buildozer.spec not found")
+
+          content = path.read_text(encoding="utf-8")
+
+          if "[app]" not in content:
+              raise SystemExit("ERROR: [app] section not found")
+
+          lines = content.splitlines()
+          result = []
+          in_app = False
+          branch_written = False
+
+          for line in lines:
+              stripped = line.strip()
+
+              if stripped.startswith("[") and stripped.endswith("]"):
+                  if in_app and not branch_written:
+                      result.append("p4a.branch = develop")
+                      branch_written = True
+                  in_app = stripped.lower() == "[app]"
+
+              if in_app and stripped.startswith("p4a.branch"):
+                  if not branch_written:
+                      result.append("p4a.branch = develop")
+                      branch_written = True
+                  continue
+
+              result.append(line)
+
+          if in_app and not branch_written:
+              result.append("p4a.branch = develop")
+
+          path.write_text("\n".join(result) + "\n", encoding="utf-8")
+          print("Configured p4a.branch = develop")
+          PY
+
+          echo "=== Build configuration ==="
+          grep -E '^(title|package\.|requirements|p4a\.branch|android\.api|android\.minapi|android\.ndk|android\.archs)' buildozer.spec
 
       - name: Accept Android SDK licenses
         run: |
           mkdir -p "$HOME/.android"
           touch "$HOME/.android/repositories.cfg"
+          echo "Android SDK licenses will be handled by Buildozer."
 
-      - name: Build APK
+      - name: Build debug APK
+        id: build_apk
+        continue-on-error: true
+        env:
+          BUILDOZER_WARN_ON_ROOT: "0"
         run: |
-          buildozer -v android debug
+          buildozer -v android debug 2>&1 | tee build.log
+          test ${PIPESTATUS[0]} -eq 0
 
-      - name: Diagnose SDK if build fails
-        if: failure()
+      - name: Show build diagnostics
+        if: always()
         run: |
-          echo "=== SDK files ==="
-          find "$HOME/.buildozer/android/platform" \
-            -maxdepth 5 \
-            \( -name aidl -o -name sdkmanager \) \
-            -print 2>/dev/null || true
+          if [ -f build.log ]; then
+            echo "=== Error lines ==="
+            grep -niE \
+              'Traceback|fatal error:|Error:|ERROR:|FAILED|undefined reference|No such file|not found|Could not|Exception|failed' \
+              build.log | tail -n 100 || true
 
-          echo "=== Buildozer spec ==="
-          grep -E 'android\.(api|minapi|accept_sdk_license|skip_update|sdk_path|ndk_path|build_tools_version)' \
-            buildozer.spec || true
+            echo "=== Last 180 log lines ==="
+            tail -n 180 build.log
+          fi
 
       - name: Upload APK
+        if: steps.build_apk.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: attendance-apk
           path: bin/*.apk
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Fail workflow if build failed
+        if: steps.build_apk.outcome != 'success'
+        run: |
+          echo "APK build failed. Check the Build diagnostics step."
+          exit 1
