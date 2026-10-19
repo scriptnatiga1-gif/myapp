@@ -3,7 +3,8 @@ name: Build Android APK
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -22,12 +23,12 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install system dependencies
         run: |
@@ -41,14 +42,25 @@ jobs:
             libtinfo5 cmake libffi-dev libssl-dev \
             build-essential
 
-      - name: Install Buildozer and build dependencies
+      - name: Install Buildozer
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install \
-            "cython==0.29.34" \
-            legacy-cgi
+          python -m pip install "cython==0.29.34" legacy-cgi
           python -m pip install \
             "git+https://github.com/kivy/buildozer.git"
+
+      - name: Check project files
+        run: |
+          echo "=== Project files ==="
+          ls -la
+          echo "=== Buildozer configuration ==="
+          if [ ! -f buildozer.spec ]; then
+            echo "ERROR: buildozer.spec is missing"
+            exit 1
+          fi
+          grep -E \
+            '^(title|package\.|requirements|source\.dir|p4a\.branch|android\.api|android\.minapi|android\.ndk|android\.archs)' \
+            buildozer.spec || true
 
       - name: Configure python-for-android
         run: |
@@ -56,15 +68,9 @@ jobs:
           from pathlib import Path
 
           path = Path("buildozer.spec")
-          if not path.exists():
-              raise SystemExit("ERROR: buildozer.spec not found")
-
           content = path.read_text(encoding="utf-8")
-
-          if "[app]" not in content:
-              raise SystemExit("ERROR: [app] section not found")
-
           lines = content.splitlines()
+
           result = []
           in_app = False
           branch_written = False
@@ -89,18 +95,17 @@ jobs:
           if in_app and not branch_written:
               result.append("p4a.branch = develop")
 
-          path.write_text("\n".join(result) + "\n", encoding="utf-8")
+          path.write_text(
+              "\n".join(result) + "\n",
+              encoding="utf-8"
+          )
           print("Configured p4a.branch = develop")
           PY
 
-          echo "=== Build configuration ==="
-          grep -E '^(title|package\.|requirements|p4a\.branch|android\.api|android\.minapi|android\.ndk|android\.archs)' buildozer.spec
-
-      - name: Accept Android SDK licenses
+      - name: Prepare Android SDK
         run: |
           mkdir -p "$HOME/.android"
           touch "$HOME/.android/repositories.cfg"
-          echo "Android SDK licenses will be handled by Buildozer."
 
       - name: Build debug APK
         id: build_apk
@@ -108,21 +113,38 @@ jobs:
         env:
           BUILDOZER_WARN_ON_ROOT: "0"
         run: |
+          set -o pipefail
           buildozer -v android debug 2>&1 | tee build.log
-          test ${PIPESTATUS[0]} -eq 0
 
       - name: Show build diagnostics
         if: always()
         run: |
           if [ -f build.log ]; then
-            echo "=== Error lines ==="
+            echo "========== FIRST REAL ERROR CANDIDATES =========="
             grep -niE \
-              'Traceback|fatal error:|Error:|ERROR:|FAILED|undefined reference|No such file|not found|Could not|Exception|failed' \
-              build.log | tail -n 100 || true
+              'fatal error:|error:|Traceback \(most recent call last\)|ModuleNotFoundError|ImportError|SyntaxError|undefined reference|No such file or directory|command not found|BUILD FAILED|Exception:' \
+              build.log | tail -n 80 || true
 
-            echo "=== Last 180 log lines ==="
-            tail -n 180 build.log
+            echo "========== LAST 250 LOG LINES =========="
+            tail -n 250 build.log
+
+            echo "========== PYTHON ANDROID LOG FILES =========="
+            find .buildozer -type f -name "*.log" -print 2>/dev/null | tail -n 30 || true
+
+            echo "========== BUILD OUTPUT =========="
+            find bin -maxdepth 1 -type f -name "*.apk" -print 2>/dev/null || true
+          else
+            echo "build.log was not created"
           fi
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: attendance-build-log
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload APK
         if: steps.build_apk.outcome == 'success'
@@ -133,8 +155,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Fail workflow if build failed
+      - name: Report build result
         if: steps.build_apk.outcome != 'success'
         run: |
-          echo "APK build failed. Check the Build diagnostics step."
+          echo "APK build failed."
+          echo "Open Show build diagnostics or download attendance-build-log."
           exit 1
