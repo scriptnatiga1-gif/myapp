@@ -22,10 +22,12 @@ android.minapi = 23
 
 android.ndk = 28c
 
-android.archs = arm64-v8a, armeabi-v7a
+android.archs = arm64-v8a,armeabi-v7a
 
 android.accept_sdk_license = True
 android.skip_update = False
+
+p4a.branch = master
 
 [buildozer]
 
