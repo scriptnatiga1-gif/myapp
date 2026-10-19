@@ -38,22 +38,37 @@ jobs:
             zlib1g-dev libncurses5-dev libncursesw5-dev \
             libtinfo5 cmake libffi-dev libssl-dev
 
-      - name: Verify Buildozer configuration
-        run: |
-          grep -n "android.accept_sdk_license" buildozer.spec
-          grep -n "android.api" buildozer.spec
-          grep -n "android.minapi" buildozer.spec
-
       - name: Install Buildozer
         run: |
           python -m pip install --upgrade pip
           pip install buildozer cython==0.29.36
 
+      - name: Verify configuration
+        run: |
+          echo "=== Android configuration ==="
+          grep -E '^(android\.|requirements|source\.dir|package\.)' buildozer.spec
+
+      - name: Accept Android SDK licenses
+        run: |
+          mkdir -p "$HOME/.android"
+          touch "$HOME/.android/repositories.cfg"
+
       - name: Build APK
-        env:
-          JAVA_HOME: ${{ env.JAVA_HOME }}
         run: |
           buildozer -v android debug
+
+      - name: Diagnose SDK if build fails
+        if: failure()
+        run: |
+          echo "=== SDK files ==="
+          find "$HOME/.buildozer/android/platform" \
+            -maxdepth 5 \
+            \( -name aidl -o -name sdkmanager \) \
+            -print 2>/dev/null || true
+
+          echo "=== Buildozer spec ==="
+          grep -E 'android\.(api|minapi|accept_sdk_license|skip_update|sdk_path|ndk_path|build_tools_version)' \
+            buildozer.spec || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
