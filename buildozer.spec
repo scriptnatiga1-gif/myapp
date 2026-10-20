@@ -1,4 +1,3 @@
-
 [app]
 
 title = Attendance App
@@ -17,10 +16,10 @@ fullscreen = 0
 
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,WAKE_LOCK
 
-android.api = 35
-android.minapi = 23
-
-android.ndk = 28c
+# استخدام إصدارات مستقرة ومدعومة بالكامل لتجنب مشاكل البناء
+android.api = 33
+android.minapi = 21
+android.ndk = 25b
 
 android.archs = arm64-v8a,armeabi-v7a
 
