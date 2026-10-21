@@ -9,26 +9,22 @@ package.name = attendanceapp
 # (str) Package domain (needed for android packaging)
 package.domain = org.mhti
 
-# (str) Source files where the let's go (relative to directory of buildozer.spec)
+# (str) Source files where the let's go
 source.dir = .
 
-# (list) Source files to include (let's specify extensions)
-source.include_exts = py,png,jpg,json,txt
+# (list) Source files to include
+source.include_exts = py,png,jpg,jpeg,json,txt
 
 # (str) Application versioning
 version = 2.3.0
 
 # (list) Application requirements
-# تأكد من تضمين الحزم الضرورية لعمل جافا وجنيوس وسيرفر بايثون
-requirements = python3,kivy,pyjnius,android
-
-# (str) Custom source folders for requirements
-#requirements.source.kivy = ../../../kivy
+requirements = python3,kivy
 
 # (list) Permissions
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,WAKE_LOCK
 
-# (int) Target Android API, should be as high as possible.
+# (int) Target Android API
 android.api = 33
 
 # (int) Minimum API your APK will support.
@@ -43,13 +39,22 @@ android.archs = arm64-v8a,armeabi-v7a
 # (bool) Indicate whether the application should be fullscreen or not
 fullscreen = 0
 
-# (string) Presplash background color
+# (str) Icon of the application - ده سطر اللوجو اللي ظبطتهولك
+icon = logo.jpg
+
+# (str) Presplash background color
 #presplash.color = #FFFFFF
 
 [buildozer]
 
-# (int) Log level (0 = error only, 1 = info, 2 = debug (with command output))
+# (int) Log level (0 = error only, 1 = info, 2 = debug)
 log_level = 2
 
 # (int) Display warning if buildozer is run as root (0 = False, 1 = True)
 warn_on_root = 1
+
+# (str) Supported orientation
+#orientation = portrait
+
+# (bool) Skip update check
+#buildozer.check_application_requirements = True
