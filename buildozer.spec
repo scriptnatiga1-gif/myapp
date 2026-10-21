@@ -26,6 +26,8 @@ android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,WAKE_LOCK
 
 # (int) Target Android API
 android.api = 33
+p4a.branch = master
+android.accept_sdk_license_agreement = True
 
 # (int) Minimum API your APK will support.
 android.minapi = 21
