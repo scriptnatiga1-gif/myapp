@@ -1,163 +1,38 @@
-
 name: Build Android APK
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+    - name: Checkout Repository
+      uses: actions/checkout@v4
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential ccache git python3-pip libffi-dev libssl-dev zip unzip openjdk-17-jdk autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake gettext libffi-dev libssl-dev
+        python -m pip install --upgrade pip setuptools wheel
+        pip install buildozer cython kivy
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            git zip unzip \
-            python3-pip python3-venv \
-            autoconf automake autopoint gettext \
-            libtool pkg-config \
-            zlib1g-dev libncurses5-dev libncursesw5-dev \
-            libtinfo5 cmake libffi-dev libssl-dev \
-            build-essential
+    - name: Build APK with Buildozer
+      run: |
+        buildozer -v android debug
 
-      - name: Install Buildozer
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install "cython==0.29.34" legacy-cgi
-          python -m pip install \
-            "git+https://github.com/kivy/buildozer.git"
-
-      - name: Check project files
-        run: |
-          echo "=== Project files ==="
-          ls -la
-          echo "=== Buildozer configuration ==="
-          if [ ! -f buildozer.spec ]; then
-            echo "ERROR: buildozer.spec is missing"
-            exit 1
-          fi
-          grep -E \
-            '^(title|package\.|requirements|source\.dir|p4a\.branch|android\.api|android\.minapi|android\.ndk|android\.archs)' \
-            buildozer.spec || true
-
-      - name: Configure python-for-android
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path("buildozer.spec")
-          content = path.read_text(encoding="utf-8")
-          lines = content.splitlines()
-
-          result = []
-          in_app = False
-          branch_written = False
-
-          for line in lines:
-              stripped = line.strip()
-
-              if stripped.startswith("[") and stripped.endswith("]"):
-                  if in_app and not branch_written:
-                      result.append("p4a.branch = develop")
-                      branch_written = True
-                  in_app = stripped.lower() == "[app]"
-
-              if in_app and stripped.startswith("p4a.branch"):
-                  if not branch_written:
-                      result.append("p4a.branch = develop")
-                      branch_written = True
-                  continue
-
-              result.append(line)
-
-          if in_app and not branch_written:
-              result.append("p4a.branch = develop")
-
-          path.write_text(
-              "\n".join(result) + "\n",
-              encoding="utf-8"
-          )
-          print("Configured p4a.branch = develop")
-          PY
-
-      - name: Prepare Android SDK
-        run: |
-          mkdir -p "$HOME/.android"
-          touch "$HOME/.android/repositories.cfg"
-
-      - name: Build debug APK
-        id: build_apk
-        continue-on-error: true
-        env:
-          BUILDOZER_WARN_ON_ROOT: "0"
-        run: |
-          set -o pipefail
-          buildozer -v android debug 2>&1 | tee build.log
-
-      - name: Show build diagnostics
-        if: always()
-        run: |
-          if [ -f build.log ]; then
-            echo "========== FIRST REAL ERROR CANDIDATES =========="
-            grep -niE \
-              'fatal error:|error:|Traceback \(most recent call last\)|ModuleNotFoundError|ImportError|SyntaxError|undefined reference|No such file or directory|command not found|BUILD FAILED|Exception:' \
-              build.log | tail -n 80 || true
-
-            echo "========== LAST 250 LOG LINES =========="
-            tail -n 250 build.log
-
-            echo "========== PYTHON ANDROID LOG FILES =========="
-            find .buildozer -type f -name "*.log" -print 2>/dev/null | tail -n 30 || true
-
-            echo "========== BUILD OUTPUT =========="
-            find bin -maxdepth 1 -type f -name "*.apk" -print 2>/dev/null || true
-          else
-            echo "build.log was not created"
-          fi
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: attendance-build-log
-          path: build.log
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Upload APK
-        if: steps.build_apk.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: attendance-apk
-          path: bin/*.apk
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Report build result
-        if: steps.build_apk.outcome != 'success'
-        run: |
-          echo "APK build failed."
-          echo "Open Show build diagnostics or download attendance-build-log."
-          exit 1
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Attendance-App-APK
+        path: bin/*.apk
