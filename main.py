@@ -22,11 +22,42 @@ def get_android_id():
 ANDROID_SERIAL = get_android_id()
 SECRET = "Mn2026_Secret_@#_KEY"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE = os.path.join(BASE_DIR, "attendance.json")
-CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
-LATEST_FILE = os.path.join(BASE_DIR, "latest_link.txt")
+# These paths are redirected to App.user_data_dir on Android before the server starts.
+DATA_DIR = BASE_DIR
+DATA_FILE = os.path.join(DATA_DIR, "attendance.json")
+CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
+LATEST_FILE = os.path.join(DATA_DIR, "latest_link.txt")
+
+def configure_storage(app=None):
+ """Use Android's writable private app folder; migrate old adjacent files once."""
+ global DATA_DIR, DATA_FILE, CONFIG_FILE, LATEST_FILE
+ target = BASE_DIR
+ try:
+  if app is not None and getattr(app, "user_data_dir", None):
+   target = app.user_data_dir
+ except Exception:
+  pass
+ os.makedirs(target, exist_ok=True)
+ old_paths = {
+  "attendance.json": os.path.join(BASE_DIR, "attendance.json"),
+  "config.json": os.path.join(BASE_DIR, "config.json"),
+  "latest_link.txt": os.path.join(BASE_DIR, "latest_link.txt"),
+ }
+ for name, old_path in old_paths.items():
+  new_path = os.path.join(target, name)
+  if os.path.abspath(old_path) != os.path.abspath(new_path) and os.path.isfile(old_path) and not os.path.exists(new_path):
+   try:
+    import shutil
+    shutil.copy2(old_path, new_path)
+   except Exception as exc:
+    print("Data migration warning:", name, exc)
+ DATA_DIR = target
+ DATA_FILE = os.path.join(DATA_DIR, "attendance.json")
+ CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
+ LATEST_FILE = os.path.join(DATA_DIR, "latest_link.txt")
+
 DEFAULT_ADMIN_PASS = "mansour2026"
-DEFAULT_CFG = {"lecturePass": "", "open": "0", "s": "", "max_active": 32, "stay_seconds": 2.0, "ip_check": False, "nid_check": True, "device_check": True, "hw_check": True, "android_check": True, "black_nids": [], "black_ips": [], "white_ips": [], "after_msg": "✅ تم التسجيل في موبايل الدكتور", "done_msg": "✅ تم تسجيل حضورك - توجه لمعمل 3 عند م/ احمد", "batch": 5, "adminPass": DEFAULT_ADMIN_PASS, "local_app_enabled": True}
+DEFAULT_CFG = {"lecturePass": "", "open": "0", "s": "", "max_active": 32, "stay_seconds": 2.0, "ip_check": False, "nid_check": True, "device_check": True, "hw_check": False, "android_check": True, "black_nids": [], "black_ips": [], "white_ips": [], "after_msg": "✅ تم التسجيل في موبايل الدكتور", "done_msg": "✅ تم تسجيل حضورك - توجه لمعمل 3 عند م/ احمد", "batch": 5, "adminPass": DEFAULT_ADMIN_PASS, "local_app_enabled": True}
 active_ips = OrderedDict()
 waiting_queue = OrderedDict()
 
@@ -68,8 +99,6 @@ def get_local_ips():
   for ip in socket.gethostbyname_ex(hostname)[2]:
    if not ip.startswith("127.") and ip not in seen: ips.append(ip); seen.add(ip)
  except: pass
- for common in ["192.168.43.1", "192.168.137.1", "192.168.49.1", "192.168.0.100", "192.168.1.15"]:
-  if common not in seen: ips.append(common); seen.add(common)
  def sort_key(ip):
   if ip == primary: return (0, ip)
   if ip.startswith("192.168.0."): return (1, ip)
@@ -188,6 +217,7 @@ def simple_hash(s):
  return format(abs(h), '36')
 
 SOCIAL_FOOTER = """<div style="margin-top:28px;padding:16px 10px;border-top:1px solid #e2e8f0;text-align:center;background:linear-gradient(180deg,#fff,#f8fafc);border-radius:0 0 18px 18px"><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:10px"><a href="https://twitter.com/eng_mahmoud_man?s=07" target="_blank" style="width:36px;height:36px;background:#000;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:800;font-size:14px">𝕏</a><a href="https://github.com/natiga-script" target="_blank" style="width:36px;height:36px;background:#0f172a;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:11px;font-weight:800">GH</a><a href="https://www.facebook.com/profile.php?id=100009579078219" target="_blank" style="width:36px;height:36px;background:#1877F2;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:800">f</a><a href="https://www.linkedin.com/in/eng-mahmoud-mansour" target="_blank" style="width:36px;height:36px;background:#0A66C2;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:12px;font-weight:800">in</a><a href="https://www.instagram.com/eng_mahmoud_mansour/" target="_blank" style="width:36px;height:36px;background:radial-gradient(circle at 30% 107%,#fdf497 0%,#fdf497 5%,#fd5949 45%,#d6249f 60%,#285AEB 90%);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:11px;font-weight:800">IG</a></div><div style="font-size:11px;color:#64748b;line-height:1.8"><div>الكلية التكنولوجية بالمحلة الكبرى</div><div>المعهد الصناعي بالمحلة</div><div style="font-weight:800;color:#0f172a">د.م/ محمود منصور</div><div style="margin-top:6px;font-size:10px">© حقوق محفوظة لـ م/ محمود منصور 2026</div></div></div>"""
+
 def build_att_html():
  cfg=load_cfg()
  LOGO_TAG = get_logo_tag(size=90, with_margin=True)
@@ -214,7 +244,7 @@ async function sendData(){{
  let p=document.getElementById('pass').value.trim(),b=document.getElementById('board').value.trim(),n=document.getElementById('name').value.trim(),id=document.getElementById('nid').value.trim();
  if(!p||!b||!n||!id){{showMsg('اكمل البيانات');return;}}id=id.replace(/[٠-٩۰-۹]/g,c=>'٠١٢٣٤٥٦٧٨٩'.includes(c)?'٠١٢٣٤٥٦٧٨٩'.indexOf(c):'۰۱۲۳۴۵۶۷۸۹'.indexOf(c)).replace(/[^0-9]/g,'');if(!/^\\d{14}$/.test(id)){{showMsg('الرقم القومي يجب أن يتكون من 14 رقمًا صحيحًا');document.getElementById('nid').classList.add('bad');return;}}document.getElementById('nid').classList.remove('bad');
  try{{
-  let r=await fetch('/save',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{open:cached.open||'',s:cached.s||'',name:n,nid:id,board:b,pass:p,deviceId:getDeviceId(),hwId:getHardwareFingerprint(),androidId:'{ANDROID_SERIAL}',localApp:new URLSearchParams(location.search).get('local-app')==='1'}})}});
+  let r=await fetch('/save',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{open:cached.open||'',s:cached.s||'',name:n,nid:id,board:b,pass:p,deviceId:getDeviceId(),hwId:getHardwareFingerprint(),androidId:'',localApp:new URLSearchParams(location.search).get('local-app')==='1'}})}});
   hideAll();
   if(r.status==200){{markAsRegistered(id);document.getElementById('ok').style.display='block';let d=await r.json();if(d.redirect)location.href=d.redirect;}}
   else if(r.status==409)document.getElementById('exist').style.display='block';
@@ -232,9 +262,9 @@ def build_admin_html():
  LOGO_TAG = get_logo_tag(size=90, with_margin=True)
  HEADER_LOGO = get_header_logo_tag()
  ips = get_local_ips()
- primary = get_primary_ip() or (ips[0] if ips else "192.168.0.100")
+ primary = get_primary_ip() or (ips[0] if ips else "غير متاح")
  router_ip = primary
- hotspot_ip = "192.168.43.1"
+ hotspot_ip = primary
  for ip in ips:
   if ip.startswith("192.168.0.") or ip.startswith("192.168.1."): router_ip = ip; break
  for ip in ips:
@@ -278,7 +308,6 @@ def ensure_files():
  save_cfg(cfg)
  if not os.path.exists(DATA_FILE):
   with open(DATA_FILE,"w",encoding="utf-8") as f: f.write("[]")
-ensure_files()
 
 class Handler(http.server.SimpleHTTPRequestHandler):
  def log_message(self,*a): return
@@ -438,6 +467,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
   path = parsed.path
   query = parsed.query
   low = path.lower()
+  if low == '/health':
+   self.send_response(200)
+   self.send_header('Content-Type','application/json; charset=utf-8')
+   self.send_header('Cache-Control','no-store')
+   self.end_headers()
+   self.wfile.write(json.dumps({"app":"attendance-local","ok":True}).encode('utf-8'))
+   return
   if low == '/__save_latest':
    params = urllib.parse.parse_qs(query)
    link = params.get('link', [''])[0]
@@ -594,10 +630,18 @@ function fasl(){{
    self.wfile.write(build_admin_html().encode('utf-8')); return
   return super().do_GET()
 
+class ThreadingHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+ allow_reuse_address = True
+ daemon_threads = True
+
 def run_server():
  ensure_files()
- with socketserver.TCPServer(('0.0.0.0',8080), Handler) as httpd:
-  httpd.serve_forever()
+ try:
+  with ThreadingHTTPServer(('0.0.0.0',8080), Handler) as httpd:
+   print("Attendance server listening on 0.0.0.0:8080")
+   httpd.serve_forever()
+ except OSError as exc:
+  print("Attendance server could not start:", exc)
 
 class MainApp(App):
  def _acquire_wake_lock(self):
@@ -617,7 +661,7 @@ class MainApp(App):
   try:
    ips = get_local_ips()
    primary = get_primary_ip() or (ips[0] if ips else "غير متاح")
-   self.ip_label.text = f"APK الحضور - AutoDetect\\nIP الحالي: {primary}:8080\\nكل العناوين: {', '.join(ips[:6])}\\nSerial: {ANDROID_SERIAL[:10]}\\nالرابط الثابت: http://127.0.0.1:8080/go"
+   self.ip_label.text = f"APK الحضور - AutoDetect\nIP الحالي: {primary}:8080\nكل العناوين: {', '.join(ips[:6])}\nSerial: {ANDROID_SERIAL[:10]}\nالرابط الثابت: http://127.0.0.1:8080/go"
   except Exception:
    pass
 
@@ -625,9 +669,9 @@ class MainApp(App):
   self.root.clear_widgets()
   root = BoxLayout(orientation='vertical', padding=12, spacing=10)
   self.ip_label = Label(text="جارٍ كشف IP ...", size_hint_y=0.35)
-  btn1 = Button(text="📱 دخول كطالب من داخل التطبيق", size_hint_y=0.18)
-  btn2 = Button(text="🔐 فتح لوحة الأدمن", size_hint_y=0.18)
-  btn3 = Button(text="🌐 فتح صفحة QR والويب", size_hint_y=0.18)
+  btn1 = Button(text="📱 تسجيل حضور الطالب داخل التطبيق", size_hint_y=0.18)
+  btn2 = Button(text="🔐 فتح لوحة تحكم الدكتور", size_hint_y=0.18)
+  btn3 = Button(text="🌐 فتح صفحة QR والتقارير", size_hint_y=0.18)
   btn1.bind(on_press=self._show_student)
   btn2.bind(on_press=lambda x: webbrowser.open('http://127.0.0.1:8080/admin'))
   btn3.bind(on_press=lambda x: webbrowser.open('http://127.0.0.1:8080/'))
@@ -639,24 +683,126 @@ class MainApp(App):
   self._refresh_home()
 
  def _show_student(self, *_):
-  root = BoxLayout(orientation='vertical', padding=14, spacing=8)
-  root.add_widget(Label(text="تسجيل حضور الطالب - داخل التطبيق", size_hint_y=None, height=44))
-  self.student_pass = TextInput(hint_text="كلمة سر المحاضرة", password=True, multiline=False, size_hint_y=None, height=48)
-  self.student_board = TextInput(hint_text="رقم السبورة", multiline=False, input_filter='int', size_hint_y=None, height=48)
-  self.student_name = TextInput(hint_text="الاسم رباعي عربي", multiline=False, size_hint_y=None, height=48)
-  self.student_nid = TextInput(hint_text="الرقم القومي 14 رقم", multiline=False, input_filter='int', size_hint_y=None, height=48)
-  self.student_msg = Label(text="سيتم التسجيل من نفس تطبيق الدكتور", size_hint_y=0.25)
-  send = Button(text="إرسال الحضور", size_hint_y=None, height=52)
-  back = Button(text="رجوع", size_hint_y=None, height=44)
+  root = BoxLayout(orientation='vertical', padding=12, spacing=7)
+  root.add_widget(Label(text="تسجيل الحضور من داخل التطبيق", size_hint_y=None, height=42))
+  self.server_url = TextInput(text=getattr(self, "last_server_url", ""), hint_text="عنوان الدكتور مثل http://192.168.43.1:8080", multiline=False, size_hint_y=None, height=46)
+  self.student_pass = TextInput(hint_text="كلمة سر المحاضرة", password=True, multiline=False, size_hint_y=None, height=46)
+  self.student_board = TextInput(hint_text="رقم السبورة", multiline=False, input_filter='int', size_hint_y=None, height=46)
+  self.student_name = TextInput(hint_text="الاسم رباعي عربي", multiline=False, size_hint_y=None, height=46)
+  self.student_nid = TextInput(hint_text="الرقم القومي 14 رقم", multiline=False, input_filter='int', size_hint_y=None, height=46)
+  self.student_msg = Label(text="اتصل بشبكة الدكتور ثم امسح QR أو استخدم الكشف التلقائي.", size_hint_y=0.22)
+  actions = BoxLayout(size_hint_y=None, height=46, spacing=6)
+  scan = Button(text="📷 مسح QR")
+  discover = Button(text="🔎 اتصال تلقائي")
+  scan.bind(on_press=self._scan_qr)
+  discover.bind(on_press=self._discover_server)
+  actions.add_widget(scan); actions.add_widget(discover)
+  send = Button(text="إرسال الحضور", size_hint_y=None, height=50)
+  back = Button(text="رجوع", size_hint_y=None, height=42)
   send.bind(on_press=self._submit_native_attendance)
   back.bind(on_press=self._show_home)
-  for widget in (self.student_pass,self.student_board,self.student_name,self.student_nid,self.student_msg,send,back):
+  for widget in (self.server_url, actions, self.student_pass, self.student_board, self.student_name, self.student_nid, self.student_msg, send, back):
    root.add_widget(widget)
-  self.root.clear_widgets()
-  self.root.add_widget(root)
+  self.root.clear_widgets(); self.root.add_widget(root)
+
+ def _set_server_url(self, value):
+  value = (value or "").strip()
+  if value and not value.startswith(("http://", "https://")):
+   value = "http://" + value
+  if value.endswith("/"):
+   value = value[:-1]
+  self.last_server_url = value
+  if hasattr(self, "server_url"):
+   self.server_url.text = value
+  return value
+
+ def _scan_qr(self, *_):
+  """Launch Android's QR scanner intent if a compatible scanner is installed."""
+  try:
+   from jnius import autoclass
+   Intent = autoclass('android.content.Intent')
+   PythonActivity = autoclass('org.kivy.android.PythonActivity')
+   intent = Intent("com.google.zxing.client.android.SCAN")
+   intent.putExtra("SCAN_MODE", "QR_CODE_MODE")
+   activity = PythonActivity.mActivity
+   if not getattr(self, "_activity_result_bound", False):
+    activity.bind(on_activity_result=self._on_activity_result)
+    self._activity_result_bound = True
+   activity.startActivityForResult(intent, 1201)
+   self.student_msg.text = "وجّه الكاميرا إلى QR الخاص بالدكتور."
+  except Exception:
+   self.student_msg.text = "لم يتم العثور على قارئ QR متوافق. استخدم الاتصال التلقائي أو اكتب عنوان الدكتور يدويًا."
+
+ def _on_activity_result(self, request_code, result_code, intent):
+  try:
+   if int(request_code) != 1201 or intent is None:
+    return
+   data = intent.getStringExtra("SCAN_RESULT")
+   if not data:
+    return
+   from urllib.parse import urlparse
+   parsed = urlparse(str(data).strip() if str(data).strip().startswith(('http://','https://')) else 'http://' + str(data).strip())
+   if parsed.hostname:
+    port = parsed.port or 8080
+    self._set_server_url(f"http://{parsed.hostname}:{port}")
+    self.student_msg.text = "تم قراءة QR. اضغط إرسال الحضور بعد استكمال البيانات."
+   else:
+    self.student_msg.text = "QR لا يحتوي على عنوان خادم صالح."
+  except Exception as exc:
+   self.student_msg.text = "تعذر قراءة نتيجة QR: " + str(exc)
+
+ def _discover_server(self, *_):
+  self.student_msg.text = "جارٍ البحث عن محاضرة مفتوحة على الشبكة المحلية..."
+  def worker():
+   import urllib.request, urllib.error, concurrent.futures, ipaddress
+   found = None
+   own_ip = get_primary_ip()
+   candidates = []
+   if own_ip:
+    try:
+     net = ipaddress.ip_network(own_ip + '/24', strict=False)
+     candidates = [str(ip) for ip in net.hosts() if str(ip) != own_ip]
+    except Exception:
+     candidates = []
+   candidates += ["192.168.43.1", "192.168.49.1", "192.168.137.1", "192.168.0.1", "192.168.1.1"]
+   candidates = list(dict.fromkeys(candidates))
+   def probe(ip):
+    try:
+     base = 'http://' + ip + ':8080'
+     with urllib.request.urlopen(base + '/health', timeout=0.45) as r:
+      health = json.loads(r.read().decode('utf-8'))
+     if not health.get('ok'):
+      return None
+     with urllib.request.urlopen(base + '/get_config', timeout=0.45) as r:
+      cfg = json.loads(r.read().decode('utf-8'))
+     if str(cfg.get('open','0')) not in ('','0') and int(cfg.get('open','0')) > int(datetime.now().timestamp()*1000):
+      return base
+    except Exception:
+     return None
+    return None
+   try:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=48) as pool:
+     for result in pool.map(probe, candidates):
+      if result:
+       found = result
+       break
+   except Exception:
+    pass
+   def done(_dt):
+    if found:
+     self._set_server_url(found)
+     self.student_msg.text = "✅ تم العثور على محاضرة مفتوحة: " + found
+    else:
+     self.student_msg.text = "لم نعثر على محاضرة مفتوحة. تأكد أن الجهازين على الشبكة نفسها وأن الدكتور فتح المحاضرة، ثم امسح QR أو اكتب IP الدكتور."
+   Clock.schedule_once(done, 0)
+  threading.Thread(target=worker, daemon=True).start()
 
  def _submit_native_attendance(self, *_):
   import urllib.request, urllib.error
+  server = self._set_server_url(self.server_url.text if hasattr(self, "server_url") else "")
+  if not server:
+   self.student_msg.text = "امسح QR أو اضغط اتصال تلقائي لتحديد هاتف الدكتور أولًا."
+   return
   nid = normalize_nid(self.student_nid.text)
   if not self.student_pass.text.strip() or not self.student_board.text.strip() or not self.student_name.text.strip() or not nid:
    self.student_msg.text = "من فضلك أكمل كل البيانات."
@@ -664,33 +810,32 @@ class MainApp(App):
   if not valid_national_id(nid):
    self.student_msg.text = "الرقم القومي غير صحيح. راجع 14 رقمًا وتاريخ الميلاد والمحافظة."
    return
-  self.student_msg.text = "جارٍ إرسال الحضور..."
+  self.student_msg.text = "جارٍ إرسال الحضور إلى هاتف الدكتور..."
+  device_id = "android-" + str(ANDROID_SERIAL)
+  payload = {"name": self.student_name.text.strip(), "nid": nid,
+             "board": self.student_board.text.strip(), "pass": self.student_pass.text.strip(),
+             "deviceId": device_id, "hwId": device_id, "androidId": str(ANDROID_SERIAL), "localApp": True}
   def worker():
    try:
-    with urllib.request.urlopen('http://127.0.0.1:8080/get_config', timeout=4) as resp:
+    with urllib.request.urlopen(server + '/get_config', timeout=4) as resp:
      cfg = json.loads(resp.read().decode('utf-8'))
-    payload = {
-     "open": cfg.get("open",""), "s": cfg.get("s",""),
-     "name": self.student_name.text.strip(), "nid": nid,
-     "board": self.student_board.text.strip(), "pass": self.student_pass.text.strip(),
-     "deviceId": "local-app-" + ANDROID_SERIAL, "hwId": "local-app-" + ANDROID_SERIAL,
-     "androidId": ANDROID_SERIAL, "localApp": True
-    }
-    req = urllib.request.Request('http://127.0.0.1:8080/save',
-      data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),
-      headers={'Content-Type':'application/json'}, method='POST')
+    payload["open"] = cfg.get("open", "")
+    payload["s"] = cfg.get("s", "")
+    req = urllib.request.Request(server + '/save', data=json.dumps(payload,ensure_ascii=False).encode('utf-8'), headers={'Content-Type':'application/json'}, method='POST')
     with urllib.request.urlopen(req, timeout=8) as resp:
      result = json.loads(resp.read().decode('utf-8'))
     message = "✅ تم تسجيل الحضور بنجاح" if result.get("ok") else "لم يتم التسجيل."
    except urllib.error.HTTPError as e:
-    messages = {401:"كلمة سر المحاضرة غير صحيحة.",403:"المحاضرة مغلقة أو الرقم محظور.",409:"الرقم القومي مسجل بالفعل.",410:"هذا IP مسجل بالفعل.",411:"هذا الجهاز سجل بالفعل.",412:"بصمة الجهاز مسجلة.",413:"سيريال الجهاز مسجل.",422:"الرقم القومي غير صحيح.",429:"الطابور ممتلئ، حاول مرة أخرى."}
+    messages = {401:"كلمة سر المحاضرة غير صحيحة.",403:"المحاضرة مغلقة أو الرقم محظور.",409:"الرقم القومي مسجل بالفعل.",410:"هذا IP مسجل بالفعل.",411:"هذا الجهاز سجل بالفعل.",412:"بصمة الجهاز مسجلة.",413:"معرّف Android مسجل بالفعل.",422:"الرقم القومي غير صحيح.",429:"الطابور ممتلئ، حاول مرة أخرى."}
     message = "❌ " + messages.get(e.code, f"تعذر التسجيل (HTTP {e.code}).")
    except Exception as e:
-    message = "❌ تعذر الاتصال بخادم الحضور: " + str(e)
+    message = "❌ تعذر الاتصال بخادم الدكتور: " + str(e)
    Clock.schedule_once(lambda dt: setattr(self.student_msg,'text',message),0)
   threading.Thread(target=worker,daemon=True).start()
 
  def build(self):
+  configure_storage(self)
+  ensure_files()
   threading.Thread(target=run_server, daemon=True).start()
   self._acquire_wake_lock()
   from kivy.uix.floatlayout import FloatLayout
