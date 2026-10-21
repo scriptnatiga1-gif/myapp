@@ -3,11 +3,11 @@ on: [push]
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
@@ -18,19 +18,16 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip unzip libncurses6 libtinfo6 libstdc++6 zlib1g-dev libltdl-dev automake autoconf libsdl2-dev
-          pip install --upgrade pip
-          pip install buildozer cython==0.29.33
+          sudo apt-get install -y python3-pip openjdk-17-jdk unzip libncurses6 libtinfo5 libstdc++6 zlib1g-dev libltdl-dev automake autoconf libsdl2-dev libtool pkg-config
 
       - name: Build APK
         run: |
-          yes | buildozer android debug
+          pip install --upgrade pip
+          pip install buildozer cython==0.29.33
+          buildozer android debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
