@@ -15,9 +15,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip openjdk-17-jdk unzip \
-          libncurses6 libtinfo6 libstdc++6 zlib1g-dev \
-          libltdl-dev automake autoconf libsdl2-dev
+          sudo apt-get install -y python3-pip openjdk-17-jdk unzip libncurses6 libtinfo6 libstdc++6 zlib1g-dev libltdl-dev automake autoconf libsdl2-dev
 
       - name: Build APK with Buildozer
         run: |
