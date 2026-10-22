@@ -3,7 +3,7 @@ on: [push]
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +21,9 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip openjdk-17-jdk unzip libncurses6 libtinfo5 libstdc++6 zlib1g-dev libltdl-dev automake autoconf libsdl2-dev libtool pkg-config
+          wget http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.2-0ubuntu2_amd64.deb -O /tmp/libtinfo5.deb
+          sudo apt install -y /tmp/libtinfo5.deb
+          sudo apt-get install -y python3-pip openjdk-17-jdk unzip libstdc++6 zlib1g-dev libltdl-dev automake autoconf libsdl2-dev libtool pkg-config
 
       - name: Build APK
         run: |
