@@ -19,7 +19,7 @@ source.include_exts = py,png,jpg,jpeg,json,txt
 version = 2.3.0
 
 # (list) Application requirements
-requirements = python3,kivy
+requirements = python3,kivy==2.3.0
 
 # (list) Permissions
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,WAKE_LOCK
