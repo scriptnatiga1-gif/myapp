@@ -6,26 +6,22 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-
-      - name: Install System Dependencies
+      - name: Install Dependencies
         run: |
           sudo apt-get update
           wget -q http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.2-0ubuntu2_amd64.deb -O /tmp/libtinfo5.deb
           sudo apt install -y /tmp/libtinfo5.deb
-          sudo apt-get install -y python3-pip unzip libstdc++6 zlib1g-dev libltdl-dev automake autoconf libsdl2-dev libtool pkg-config build-essential
-
-      - name: Fix sdkmanager Path (حل مشكلة sdkmanager not found)
+          sudo apt-get install -y unzip libstdc++6 zlib1g-dev libltdl-dev automake autoconf libsdl2-dev libtool pkg-config build-essential
+      - name: Fix sdkmanager
         run: |
           mkdir -p $HOME/.buildozer/android/platform/android-sdk/tools/bin
           mkdir -p $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest
@@ -35,22 +31,21 @@ jobs:
           cp -r cmdline-tools/* $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/
           ln -sf $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager $HOME/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
           chmod +x $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/*
-
-      - name: Accept Android Licenses (حل مشكلة Aidl not found)
+      - name: Accept Licenses
         run: |
           mkdir -p ~/.android/licenses
           mkdir -p $HOME/.buildozer/android/platform/android-sdk/licenses
           echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > ~/.android/licenses/android-sdk-license
           echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.android/licenses/android-sdk-license
-          echo "24333f8a63b6825ea9c5514f83c1059b8ea686e4" >> ~/.android/licenses/android-sdk-license
           cp ~/.android/licenses/* $HOME/.buildozer/android/platform/android-sdk/licenses/ || true
-
       - name: Build APK
         run: |
           pip install --upgrade pip
-          pip install buildozer cython==0.29.33
-          yes | buildozer android debug
-
+          pip install buildozer "cython==3.0.11"
+          rm -rf .buildozer bin
+          yes | buildozer android debug > build.log 2>&1 || true
+          tail -n 400 build.log
+          ls -lh bin/ || (grep -i -A5 "error\|FAILED" build.log | tail -n 200; exit 1)
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
