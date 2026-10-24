@@ -39,8 +39,7 @@ android.sdk = 33
 # (list) Architectural build targets
 android.archs = arm64-v8a,armeabi-v7a
 
-# (str) python-for-android branch
-p4a.branch = master
+# (str) Bootstrap
 p4a.bootstrap = sdl2
 
 # (bool) Accept SDK license
