@@ -1,50 +1,64 @@
-name: Build Android APK
-on: [push]
+[app]
 
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.10' }
-      - uses: actions/setup-java@v4
-        with: { distribution: 'temurin', java-version: '17' }
+# (str) Title of your application
+title = Attendance App
 
-      - name: Install Deps
-        run: |
-          sudo apt update
-          sudo apt install -y zip unzip autoconf libtool pkg-config zlib1g-dev libncurses-dev libtinfo5 cmake libffi-dev libssl-dev libsdl2-dev
+# (str) Package name
+package.name = attendanceapp
 
-      - name: Fix SDK
-        run: |
-          mkdir -p $HOME/.buildozer/android/platform/android-sdk/tools/bin
-          mkdir -p $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest
-          cd /tmp && wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmd.zip && unzip -q cmd.zip
-          cp -r cmdline-tools/* $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/
-          chmod +x $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/*
-          ln -sf $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager $HOME/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
-          mkdir -p $HOME/.android/licenses
-          echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > $HOME/.android/licenses/android-sdk-license
-          echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $HOME/.android/licenses/android-sdk-license
-          mkdir -p $HOME/.buildozer/android/platform/android-sdk/licenses && cp $HOME/.android/licenses/* $HOME/.buildozer/android/platform/android-sdk/licenses/ || true
-          yes | $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
+# (str) Package domain (needed for android packaging)
+package.domain = org.mhti
 
-      - name: Build APK
-        run: |
-          pip install --upgrade pip
-          pip install https://github.com/kivy/buildozer/archive/master.zip
-          pip install "cython==3.0.11"
-          rm -rf .buildozer bin
-          yes | buildozer android debug > build.log 2>&1 || true
-          tail -n 500 build.log
-          find . -name "*.apk" -type f
+# (str) Source files where the *.py files live
+source.dir = .
 
-      - name: Upload
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-results
-          path: |
-            build.log
-            bin/*.apk
+# (list) Source files to include (let it empty to include all files)
+source.include_exts = py,png,jpg,jpeg,json,txt
+
+# (list) Application version
+version = 2.3.0
+
+# (list) Application requirements
+requirements = python3,kivy==2.3.1,arabic_reshaper,python-bidi
+
+# (list) List of permissions
+android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,WAKE_LOCK
+
+# (int) Target Android API, should be as high as possible.
+android.api = 33
+
+# (int) Minimum API your APK will support.
+android.minapi = 21
+
+# (int) Android NDK version to use
+android.ndk = 25b
+
+# (int) Android SDK version to use
+android.sdk = 33
+
+# (list) Android archs to build for, can be: arm64-v8a, armeabi-v7a, x86, x86_64
+android.archs = arm64-v8a
+
+# (str) python-for-android branch to use
+p4a.branch = master
+
+# (str) Bootstrap to use for android build
+p4a.bootstrap = sdl2
+
+# (bool) Indicate whether the application should accept the Android SDK license
+android.accept_sdk_license_agreement = True
+
+# (str) Fullscreen mode
+fullscreen = 0
+
+# (string) Orientation
+orientation = portrait
+
+
+[buildozer]
+
+# (int) Log level (0 = error only, 1 = info, 2 = debug (with command output))
+log_level = 2
+
+# (int) Display warning if buildozer is run as root (0 = False, 1 = True)
+warn_on_root = 1
