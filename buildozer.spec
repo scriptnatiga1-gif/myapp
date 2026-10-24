@@ -19,7 +19,11 @@ source.include_exts = py,png,jpg,jpeg,json,txt
 version = 2.3.0
 
 # (list) Application requirements
-requirements = python3,kivy==2.3.0
+requirements = python3,kivy==2.3.1
+android.api = 33
+android.minapi = 21
+p4a.branch = master
+android.accept_sdk_license_agreement = True
 
 # (list) Permissions
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,WAKE_LOCK
