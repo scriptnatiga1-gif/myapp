@@ -18,41 +18,42 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install system deps
+      - name: Install deps
         run: |
           sudo apt update
-          sudo apt install -y python3-pip zip unzip openjdk-17-jdk autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
+          sudo apt install -y zip unzip autoconf libtool pkg-config zlib1g-dev libncurses-dev libtinfo5 cmake libffi-dev libssl-dev
 
-      - name: Accept Android Licenses
+      - name: Prepare Android SDK - fix sdkmanager path
         run: |
+          # ده السطر اللي كان ناقص عندك في الصورة
+          mkdir -p $HOME/.buildozer/android/platform/android-sdk/tools/bin
+          mkdir -p $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest
+          cd /tmp
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmd.zip
+          unzip -q cmd.zip
+          cp -r cmdline-tools/* $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/
+          chmod +x $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/*
+          # اعمل رابط من المسار الجديد للقديم اللي بيلدوزر بيدور عليه
+          ln -sf $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager $HOME/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
+          # اقبل التراخيص
           mkdir -p $HOME/.android/licenses
           echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > $HOME/.android/licenses/android-sdk-license
           echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $HOME/.android/licenses/android-sdk-license
           echo "24333f8a63b6825ea9c5514f83c1059b8ea6bfb4" > $HOME/.android/licenses/android-sdk-preview-license
           mkdir -p $HOME/.buildozer/android/platform/android-sdk/licenses
           cp $HOME/.android/licenses/* $HOME/.buildozer/android/platform/android-sdk/licenses/ || true
-          yes | sdkmanager --licenses || true
-          mkdir -p $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin
-          # هينزل الـ aidl الناقص
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmd.zip
-          unzip -q /tmp/cmd.zip -d /tmp/
-          mkdir -p $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest
-          cp -r /tmp/cmdline-tools/* $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/ || true
-          chmod +x $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/*
           yes | $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          yes | $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.1" "platform-tools" "platforms;android-33" || true
 
       - name: Build APK
         run: |
           pip install --upgrade pip
           pip install buildozer cython==3.0.11
           buildozer android debug
-          find . -name "*.apk"
+          ls -lh bin/ || true
+          find . -name "*.apk" -type f
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: apk
-          path: |
-            bin/*.apk
-            **/*.apk
+          path: bin/*.apk
