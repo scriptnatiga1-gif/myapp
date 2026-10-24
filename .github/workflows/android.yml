@@ -18,14 +18,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install deps
+      - name: Install Deps
         run: |
           sudo apt update
           sudo apt install -y zip unzip autoconf libtool pkg-config zlib1g-dev libncurses-dev libtinfo5 cmake libffi-dev libssl-dev
 
-      - name: Prepare Android SDK - fix sdkmanager path
+      - name: Fix SDK and Licenses
         run: |
-          # ده السطر اللي كان ناقص عندك في الصورة
           mkdir -p $HOME/.buildozer/android/platform/android-sdk/tools/bin
           mkdir -p $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest
           cd /tmp
@@ -33,13 +32,10 @@ jobs:
           unzip -q cmd.zip
           cp -r cmdline-tools/* $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/
           chmod +x $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/*
-          # اعمل رابط من المسار الجديد للقديم اللي بيلدوزر بيدور عليه
           ln -sf $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager $HOME/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
-          # اقبل التراخيص
           mkdir -p $HOME/.android/licenses
           echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > $HOME/.android/licenses/android-sdk-license
           echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $HOME/.android/licenses/android-sdk-license
-          echo "24333f8a63b6825ea9c5514f83c1059b8ea6bfb4" > $HOME/.android/licenses/android-sdk-preview-license
           mkdir -p $HOME/.buildozer/android/platform/android-sdk/licenses
           cp $HOME/.android/licenses/* $HOME/.buildozer/android/platform/android-sdk/licenses/ || true
           yes | $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
@@ -47,13 +43,20 @@ jobs:
       - name: Build APK
         run: |
           pip install --upgrade pip
-          pip install buildozer cython==3.0.11
-          buildozer android debug
-          ls -lh bin/ || true
+          pip install buildozer "cython==3.0.11"
+          rm -rf .buildozer bin
+          mkdir -p bin
+          yes | buildozer android debug > build.log 2>&1 || true
+          echo "===== LAST 500 LINES OF LOG ====="
+          tail -n 500 build.log
+          echo "===== SEARCH FOR APK ====="
           find . -name "*.apk" -type f
+          ls -lh bin/ || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: apk
-          path: bin/*.apk
+          path: |
+            bin/*.apk
+            **/*.apk
