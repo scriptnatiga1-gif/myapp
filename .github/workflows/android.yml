@@ -35,11 +35,10 @@ jobs:
           pip install --upgrade pip
           pip install https://github.com/kivy/buildozer/archive/master.zip
           pip install "cython==3.0.11"
-          pip install "python-for-android==2024.1.21"
           rm -rf .buildozer bin
           yes | buildozer android debug > build.log 2>&1 || true
-          tail -n 300 build.log
-          find . -name "*.apk"
+          tail -n 500 build.log
+          find . -name "*.apk" -type f
 
       - name: Upload
         if: always()
