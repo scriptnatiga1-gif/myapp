@@ -15,20 +15,11 @@ source.dir = .
 # (list) Source files to include (let it empty to include all files)
 source.include_exts = py,png,jpg,jpeg,json,txt
 
-# (list) List of inclusions
-#source.include_patterns = assets/*,images/*.png
-
 # (list) Application version
 version = 2.3.0
 
-# (list) Application requirements
-# Added arabic_reshaper and python-bidi to support Arabic text rendering properly
+# (list) Application requirements (تمت إضافة مكتبات دعم اللغة العربية لتجنب ظهور المربعات)
 requirements = python3,kivy==2.3.1,arabic_reshaper,python-bidi
-
-# (list) Custom source folders for python modules
-#source.exclude_exts = spec
-# (list) List of exclusions
-#source.exclude_patterns = license,images/*/*.jpg
 
 # (list) List of permissions
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,WAKE_LOCK
