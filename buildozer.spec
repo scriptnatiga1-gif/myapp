@@ -22,8 +22,7 @@ source.include_patterns = *.ttf,icon.png,presplash.png
 version = 1.4
 
 # (list) Application requirements (مكتبات بايثون الأساسية وتصميم الواجهة ودعم اللغة العربية)
-requirements = python3,kivy==2.3.1,flask,qrcode,pillow,arabic-reshaper,python-bidi,p4a
-
+requirements = python3,kivy==2.3.0,flask,qrcode,pillow,arabic-reshaper,python-bidi,p4a
 # (list) Permissions
 android.permissions = CAMERA,INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,VIBRATE
 
