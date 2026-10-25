@@ -19,7 +19,6 @@ jobs:
 
     - name: Install System Dependencies
       run: |
-        sudo dpkg --add-architecture i386
         sudo apt-get update
         sudo apt-get install -y \
           build-essential \
@@ -28,8 +27,6 @@ jobs:
           unzip \
           openjdk-17-jdk \
           python3-pip \
-          python3-setuptools \
-          python3-wheel \
           libltdl-dev \
           libffi-dev \
           libssl-dev \
@@ -39,13 +36,19 @@ jobs:
           zlib1g-dev \
           libncurses5-dev \
           libncursesw5-dev \
-          libstdc++6:i386 \
-          libz1:i386
+          libtinfo6 \
+          libbz2-dev
 
     - name: Install Buildozer & Cython
       run: |
         python -m pip install --upgrade pip
-        pip install --upgrade cython==0.29.36 buildozer
+        pip install --upgrade "cython==0.29.36" buildozer
+
+    - name: Check files
+      run: |
+        ls -lh
+        ls -lh icon.png presplash.png || echo "⚠️ icon.png مش موجود - هيستخدم ايقونة افتراضية"
+        test -f buildozer.spec && echo "spec موجود" || echo "buildozer.spec مش موجود"
 
     - name: Run Buildozer
       run: |
@@ -56,3 +59,4 @@ jobs:
       with:
         name: attendance-app-release
         path: bin/*.apk
+        if-no-files-found: error
