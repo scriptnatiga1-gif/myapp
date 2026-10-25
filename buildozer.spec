@@ -22,7 +22,7 @@ source.include_patterns = *.ttf,icon.png,presplash.png
 version = 1.4
 
 # (list) Application requirements (مكتبات بايثون الأساسية وتصميم الواجهة ودعم اللغة العربية)
-requirements = python3,kivy==2.3.0,flask,qrcode,pillow,arabic-reshaper,python-bidi,p4a
+requirements = python3==3.11.7,kivy==2.3.0,flask,qrcode,pillow,arabic-reshaper,python-bidi,p4a
 # (list) Permissions
 android.permissions = CAMERA,INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,VIBRATE
 
@@ -52,6 +52,9 @@ android.archs = arm64-v8a
 
 # (str) Bootstrap to use for android build
 p4a.bootstrap = sdl2
+
+# (str) python-for-android branch to use
+p4a.branch = stable
 
 # (bool) Indicate whether the application should accept the Android SDK license
 android.accept_sdk_license_agreement = True
