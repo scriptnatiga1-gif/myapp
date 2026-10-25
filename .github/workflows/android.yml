@@ -47,10 +47,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install --upgrade cython==0.29.36 buildozer
 
-    - name: Configure Buildozer for Non-Interactive & Fast Build
-      run: |
-        sed -i 's/#log_level = 2/log_level = 2/g' buildozer.spec || true
-
     - name: Run Buildozer
       run: |
         yes | buildozer -v android debug
