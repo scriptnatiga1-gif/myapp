@@ -6,7 +6,7 @@ title = حضور - نظام الحضور الذكي
 # (str) Package name
 package.name = hodour
 
-# (str) Package domain
+# (str) Package domain (needed for android packaging)
 package.domain = org.mhti
 
 # (str) Source dir
@@ -47,6 +47,12 @@ android.minapi = 21
 
 # (int) Android NDK version
 android.ndk = 25b
+
+# (str) Android SDK version
+android.sdk = 33
+
+# (str) Android Build Tools version - ده اللي بيحل ايرور Aidl
+android.build_tools_version = 33.0.2
 
 # (list) Android archs to build for
 android.archs = arm64-v8a
