@@ -15,7 +15,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: '3.10'
 
     - name: Install System Dependencies
       run: |
@@ -24,6 +24,12 @@ jobs:
           build-essential git zip unzip openjdk-17-jdk python3-pip \
           libltdl-dev libffi-dev libssl-dev autoconf libtool pkg-config \
           zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 libbz2-dev
+
+    - name: Accept Android SDK Licenses & Install Build-Tools
+      run: |
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.2" "platforms;android-33" "platform-tools"
+        ls $ANDROID_HOME/build-tools/33.0.2/aidl
 
     - name: Install Buildozer Stable
       run: |
