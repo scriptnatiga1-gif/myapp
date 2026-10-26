@@ -22,7 +22,7 @@ presplash.color = #1a1a2e
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
-android.build_tools_version = 33.0.2
+android.build_tools_version = 37.0.0
 android.archs = arm64-v8a
 android.accept_sdk_license_agreement = True
 
