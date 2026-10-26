@@ -29,6 +29,8 @@ jobs:
       run: |
         yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
         $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.2" "build-tools;37.0.0" "platforms;android-33" "platform-tools"
+        ls $ANDROID_HOME/build-tools/37.0.0/aidl
+        ls $ANDROID_HOME/build-tools/33.0.2/aidl
 
     - name: Install Buildozer Stable
       run: |
@@ -39,10 +41,10 @@ jobs:
     - name: Run Buildozer
       run: |
         rm -rf .buildozer bin
-        mkdir -p .buildozer/android/platform/android-sdk/tools/bin
+        mkdir -p .buildozer/android/platform
+        ln -sf $ANDROID_HOME .buildozer/android/platform/android-sdk
         mkdir -p .buildozer/android/platform/android-sdk/licenses
-        ln -sf $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager .buildozer/android/platform/android-sdk/tools/bin/sdkmanager
-        cp $ANDROID_HOME/licenses/* .buildozer/android/platform/android-sdk/licenses/ || true
+        cp -f $ANDROID_HOME/licenses/* .buildozer/android/platform/android-sdk/licenses/ || true
         buildozer android debug --no-log
 
     - name: Upload APK Artifact
