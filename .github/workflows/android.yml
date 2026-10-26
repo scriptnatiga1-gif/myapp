@@ -41,8 +41,8 @@ jobs:
       - name: Build APK
         run: |
           python -m pip install --upgrade pip
+          pip install "cython==0.29.33"
           pip install --upgrade buildozer
-          pip install "cython==3.0.11"
           rm -rf .buildozer bin
           buildozer -v android debug
 
