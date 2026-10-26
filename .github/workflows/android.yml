@@ -19,7 +19,7 @@ jobs:
           -v $PWD:/home/user/hostcwd \
           -w /home/user/hostcwd \
           kivy/buildozer:latest \
-          buildozer android debug
+          android debug
 
     - name: Fix permissions
       run: sudo chown -R $USER:$USER bin/ .buildozer/ || true
