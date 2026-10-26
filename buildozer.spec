@@ -22,18 +22,15 @@ presplash.color = #1a1a2e
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
-android.build_tools_version = 37.0.0
 android.archs = arm64-v8a
 android.accept_sdk_license_agreement = True
 
 p4a.bootstrap = sdl2
-p4a.fork = kivy
-p4a.branch = master
 
 fullscreen = 0
 orientation = portrait
 
 [buildozer]
 
-log_level = 1
+log_level = 2
 warn_on_root = 1
