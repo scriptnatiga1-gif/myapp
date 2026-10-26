@@ -22,7 +22,7 @@ source.include_patterns = *.ttf,icon.png,presplash.png
 version = 1.4
 
 # (list) Application requirements - اهم سطر
-requirements = python3,kivy==2.3.0,flask,qrcode,pillow,arabic-reshaper,python-bidi
+requirements = python3,kivy==2.3.1,flask,qrcode,pillow,arabic-reshaper,python-bidi
 
 # (list) Permissions
 android.permissions = CAMERA,INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,VIBRATE
@@ -70,7 +70,7 @@ orientation = portrait
 [buildozer]
 
 # (int) Log level
-log_level = 2
+log_level = 1
 
 # (int) Display warning if buildozer is run as root
 warn_on_root = 1
