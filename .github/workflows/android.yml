@@ -14,10 +14,11 @@ jobs:
 
     - name: Build APK with Kivy Docker
       run: |
+        docker pull kivy/buildozer:latest
         docker run --rm \
           -v $PWD:/home/user/hostcwd \
           -w /home/user/hostcwd \
-          kivy/buildozer:master \
+          kivy/buildozer:latest \
           buildozer android debug
 
     - name: Fix permissions
