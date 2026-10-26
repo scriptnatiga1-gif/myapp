@@ -25,17 +25,19 @@ jobs:
           libltdl-dev libffi-dev libssl-dev autoconf libtool pkg-config \
           zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 libbz2-dev
 
-    - name: Force Accept All Android Licenses
+    - name: Force Accept All Licenses and Patch sdkmanager
       run: |
         mkdir -p $ANDROID_HOME/licenses
         printf "8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c1059b8ea4b034\n" > $ANDROID_HOME/licenses/android-sdk-license
         printf "d975f751698a77b662f1254ddbeed3901e976f5a\n" > $ANDROID_HOME/licenses/android-sdk-preview-license
         yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.2" "build-tools;37.0.0" "platforms;android-33" "platform-tools" || true
-        ls -l $ANDROID_HOME/build-tools/37.0.0/aidl
-        ls -l $ANDROID_HOME/build-tools/33.0.2/aidl || echo "33.0.2 لسه منزلش هنجرب 34"
-        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;34.0.0" || true
-        ls -l $ANDROID_HOME/build-tools/
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;37.0.0" "build-tools;33.0.2" "platforms;android-33" "platform-tools" || true
+        ls $ANDROID_HOME/build-tools/37.0.0/aidl
+        # ده السحر - بنخلي اي sdkmanager يتسأل يرد yes لوحده
+        mv $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager.real
+        printf '#!/bin/bash\nyes | %s/sdkmanager.real "$@"\n' $ANDROID_HOME/cmdline-tools/latest/bin > $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
+        chmod +x $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
+        echo "Patched sdkmanager to auto-accept licenses"
 
     - name: Install Buildozer Stable
       run: |
