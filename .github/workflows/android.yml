@@ -16,31 +16,20 @@ jobs:
       - name: Install Deps
         run: |
           sudo apt update
-          sudo apt install -y python3-pip zip unzip openjdk-17-jdk autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev libltdl-dev
+          sudo apt install -y zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev libltdl-dev libbz2-dev libsqlite3-dev
 
       - name: Install Buildozer
         run: |
           pip install --upgrade pip
-          pip install Cython==0.29.33
-          pip install buildozer
+          pip install Cython==0.29.33 buildozer
 
       - name: Build APK
         run: |
           rm -rf .buildozer bin
-          yes | buildozer android debug --verbose
-          
-      - name: Show results
-        if: always()
-        run: |
-          ls -lh bin/ || true
-          find . -name "*.apk" | head -20
+          buildozer android debug
 
       - name: Upload APK
-        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: apk-and-logs
-          path: |
-            bin/*.apk
-            .buildozer/logs/*.log
-          if-no-files-found: warn
+          name: hodour-apk
+          path: bin/*.apk
