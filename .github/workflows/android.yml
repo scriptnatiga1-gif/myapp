@@ -22,7 +22,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y zip unzip autoconf libtool pkg-config zlib1g-dev libncurses-dev libtinfo5 cmake libffi-dev libssl-dev libsdl2-dev git
+          sudo apt install -y zip unzip autoconf libtool pkg-config zlib1g-dev libncurses-dev libtinfo5 cmake libffi-dev libssl-dev libsdl2-dev git patch
 
       - name: Fix Android SDK
         run: |
@@ -41,8 +41,9 @@ jobs:
       - name: Build APK
         run: |
           python -m pip install --upgrade pip
+          pip install --upgrade setuptools wheel
           pip install buildozer==1.5.0
-          pip install --force-reinstall "cython==0.29.33"
+          pip install cython==0.29.33
           rm -rf .buildozer bin
           buildozer -v android debug
 
