@@ -6,35 +6,32 @@ package.domain = org.mhti
 source.dir = .
 source.include_exts = py,png,jpg,jpeg,json,txt,ttf
 source.include_patterns = *.ttf,icon.png,presplash.png
-source.exclude_patterns = venv,*.log,bin,.buildozer,.git,__pycache__
+source.exclude_patterns = venv,bin,.buildozer,.git,__pycache__,*.log
 
 version = 2.3.0
 
-# شيلت flask - لو محتاجه للسيرفر خليه بره ال APK
-requirements = python3,kivy==2.3.1,Pillow,qrcode,arabic-reshaper,python-bidi
+# هنا التعديل المهم: زودت pyjnius وشيلت flask
+requirements = python3,kivy==2.3.1,Pillow,qrcode,arabic-reshaper,python-bidi,pyjnius,android
 
-# صلاحيات متوافقة مع اندرويد 13
-android.permissions = INTERNET,ACCESS_NETWORK_STATE,CAMERA,VIBRATE,WAKE_LOCK
-
-icon.filename = %(source.dir)s/icon.png
-presplash.filename = %(source.dir)s/presplash.png
-presplash.color = #1a1a2e
-
+android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,CAMERA,VIBRATE,WAKE_LOCK
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
 android.sdk = 33
 android.accept_sdk_license_agreement = True
 
+# لازم الاتنين مع بعض عشان اغلب الموبايلات
 android.archs = arm64-v8a, armeabi-v7a
-android.allow_backup = False
 
-p4a.branch = master
+icon.filename = %(source.dir)s/icon.png
+presplash.filename = %(source.dir)s/presplash.png
+
 p4a.bootstrap = sdl2
+p4a.branch = master
 p4a.fork = kivy
-# مهم عشان المكتبات اللي ملهاش وصفة
-p4a.whitelist = 
-p4a.local_recipes = 
+
+# عشان يسمح بالبورت بتاع السيرفر
+p4a.whitelist = libffi,openssl,sqlite3
 
 orientation = portrait
 fullscreen = 0
