@@ -12,14 +12,8 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Fix Git Permissions
-        run: |
-          git config --global --add safe.directory /__w/$(echo ${{ github.repository }} | cut -d'/' -f2)/$(echo ${{ github.repository }} | cut -d'/' -f2) || true
-          git config --global --add safe.directory /github/workspace
-
       - name: Build APK with Docker Buildozer
         run: |
-          cd /github/workspace
           rm -rf .buildozer bin
           buildozer -v android debug
 
