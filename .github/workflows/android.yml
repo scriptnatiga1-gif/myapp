@@ -5,45 +5,21 @@ on: [push]
 jobs:
   build:
     runs-on: ubuntu-22.04
+    container:
+      image: kivy/buildozer:latest
+      options: --user root
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Install Dependencies
+      - name: Fix Git Permissions
         run: |
-          sudo apt update
-          sudo apt install -y zip unzip autoconf libtool pkg-config zlib1g-dev libncurses-dev libtinfo5 cmake libffi-dev libssl-dev libsdl2-dev git patch
+          git config --global --add safe.directory /__w/$(echo ${{ github.repository }} | cut -d'/' -f2)/$(echo ${{ github.repository }} | cut -d'/' -f2) || true
+          git config --global --add safe.directory /github/workspace
 
-      - name: Fix Android SDK
+      - name: Build APK with Docker Buildozer
         run: |
-          mkdir -p $HOME/.buildozer/android/platform/android-sdk/tools/bin
-          mkdir -p $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest
-          cd /tmp && wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmd.zip && unzip -q cmd.zip
-          cp -r cmdline-tools/* $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/
-          chmod +x $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/*
-          ln -sf $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager $HOME/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager
-          mkdir -p $HOME/.android/licenses
-          echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > $HOME/.android/licenses/android-sdk-license
-          echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $HOME/.android/licenses/android-sdk-license
-          mkdir -p $HOME/.buildozer/android/platform/android-sdk/licenses && cp $HOME/.android/licenses/* $HOME/.buildozer/android/platform/android-sdk/licenses/ || true
-          yes | $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
-
-      - name: Build APK
-        run: |
-          python -m pip install --upgrade pip
-          pip install --upgrade setuptools wheel
-          pip install buildozer==1.5.0
-          pip install cython==0.29.33
+          cd /github/workspace
           rm -rf .buildozer bin
           buildozer -v android debug
 
