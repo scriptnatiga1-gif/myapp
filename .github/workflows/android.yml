@@ -53,15 +53,39 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install "Cython==0.29.36" "buildozer==1.5.0"
 
-      - name: Seed accepted licenses for Buildozer SDK
+      - name: Prepare SDK manager for Buildozer and accept licenses
         shell: bash
         run: |
           set -euo pipefail
-          test -d "$ANDROID_HOME/licenses"
+          : "${ANDROID_HOME:?ANDROID_HOME was not set by setup-android}"
           SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
-          mkdir -p "$SDK_DIR/licenses"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          fi
+          if [[ -z "${SDKMANAGER:-}" || ! -x "$SDKMANAGER" ]]; then
+            echo "ERROR: Android sdkmanager was not found under $ANDROID_HOME/cmdline-tools"
+            find "$ANDROID_HOME" -maxdepth 5 -type f -name sdkmanager -print || true
+            exit 1
+          fi
+
+          mkdir -p "$SDK_DIR/tools/bin" "$SDK_DIR/cmdline-tools/latest" "$SDK_DIR/licenses"
+          # Buildozer 1.5.0 looks for the old tools/bin/sdkmanager path.
+          # This wrapper redirects it to the modern command-line tools and SDK root.
+          cat > "$SDK_DIR/tools/bin/sdkmanager" <<EOF
+          #!/usr/bin/env bash
+          exec "$SDKMANAGER" --sdk_root="$SDK_DIR" "\$@"
+          EOF
+          chmod +x "$SDK_DIR/tools/bin/sdkmanager"
+
+          # Make modern command-line tools available inside Buildozer's SDK directory.
+          cp -a "$ANDROID_HOME/cmdline-tools/latest/." "$SDK_DIR/cmdline-tools/latest/"
           cp -a "$ANDROID_HOME/licenses/." "$SDK_DIR/licenses/"
-          echo "Android SDK licenses copied to Buildozer SDK directory."
+
+          # Accept licenses for the SDK root Buildozer actually uses.
+          yes | "$SDK_DIR/tools/bin/sdkmanager" --licenses >/dev/null || true
+          "$SDK_DIR/tools/bin/sdkmanager" "platform-tools" "platforms;android-33" "build-tools;33.0.2" >/dev/null
+          echo "Prepared SDK manager at $SDK_DIR/tools/bin/sdkmanager"
 
       - name: Build debug APK
         shell: bash
