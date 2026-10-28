@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - name: Checkout project
@@ -28,12 +28,20 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Accept Android SDK licenses before Buildozer runs its own SDK manager.
+      - name: Set up Android SDK and accept licenses
+        uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
+          packages: 'platform-tools platforms;android-33 build-tools;33.0.2'
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential git zip unzip \
-            autoconf libtool pkg-config cmake \
+            autoconf automake libtool pkg-config cmake \
             zlib1g-dev libncurses5-dev libtinfo6 \
             libffi-dev libssl-dev libltdl-dev
 
@@ -45,11 +53,27 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install "Cython==0.29.36" "buildozer==1.5.0"
 
+      - name: Seed accepted licenses for Buildozer SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$ANDROID_HOME/licenses"
+          SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
+          mkdir -p "$SDK_DIR/licenses"
+          cp -a "$ANDROID_HOME/licenses/." "$SDK_DIR/licenses/"
+          echo "Android SDK licenses copied to Buildozer SDK directory."
+
       - name: Build debug APK
+        shell: bash
         run: |
           set -o pipefail
           buildozer -v android debug 2>&1 | tee build.log
-          test -n "$(find bin -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          APK_PATH="$(find bin -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          if [[ -z "$APK_PATH" ]]; then
+            echo "ERROR: Buildozer finished without producing an APK."
+            exit 1
+          fi
+          echo "APK created: $APK_PATH"
 
       - name: Upload APK and build logs
         if: always()
