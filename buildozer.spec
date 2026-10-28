@@ -25,7 +25,7 @@ icon.filename = %(source.dir)s/icon.png
 presplash.filename = %(source.dir)s/presplash.png
 
 p4a.bootstrap = sdl2
-p4a.branch = master
+p4a.branch = v2024.01.21
 p4a.fork = kivy
 
 # عشان يسمح بالبورت بتاع السيرفر
