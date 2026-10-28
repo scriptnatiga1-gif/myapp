@@ -11,7 +11,7 @@ source.exclude_patterns = venv,bin,.buildozer,.git,__pycache__,*.log
 version = 2.3.0
 
 # هنا التعديل المهم: زودت pyjnius وشيلت flask
-requirements = python3,kivy==2.3.1,Pillow,qrcode,arabic-reshaper,python-bidi,pyjnius,android
+requirements = python3,kivy==2.3.1,Pillow,qrcode,arabic-reshaper,python-bidi,pyjnius
 
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,CAMERA,VIBRATE,WAKE_LOCK
 android.api = 33
