@@ -7,6 +7,7 @@ import traceback
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_NAME = 'hodour_startup_error.txt'
+target_app_main = os.path.join(APP_DIR, 'app_main.py')
 
 def _write_log(text):
     targets = []
@@ -37,7 +38,10 @@ def _write_log(text):
         pass
 
 try:
-    runpy.run_path(os.path.join(APP_DIR, 'app_main.py'), run_name='__main__')
+    if os.path.exists(target_app_main):
+        runpy.run_path(target_app_main, run_name='__main__')
+    else:
+        raise FileNotFoundError(f"تعذر العثور على ملف app_main.py في المسار: {target_app_main}")
 except BaseException:
     details = traceback.format_exc()
     print('HODOUR STARTUP CRASH\n' + details, file=sys.stderr, flush=True)
@@ -51,7 +55,7 @@ except BaseException:
         class StartupErrorApp(App):
             def build(self):
                 root = BoxLayout(orientation='vertical', padding=12, spacing=8)
-                root.add_widget(Label(text='فشل بدء تطبيق الحضور. أرسل صورة الخطأ للمطور.', size_hint_y=None, height='64dp'))
+                root.add_widget(Label(text='فشل بدء تطبيق الحضور. تأكد من وجود ملف app_main.py داخل حزمة APK.', size_hint_y=None, height='64dp'))
                 scroll = ScrollView()
                 label = Label(text=details, size_hint_y=None, halign='left', valign='top')
                 label.bind(width=lambda inst, width: setattr(inst, 'text_size', (width, None)))
