@@ -10,15 +10,15 @@ source.exclude_patterns = venv,bin,.buildozer,.git,__pycache__,*.log
 
 version = 2.3.0
 
-# هنا التعديل المهم: زودت pyjnius وشيلت flask
-requirements = python3,kivy==2.3.1,Pillow,qrcode,arabic-reshaper,python-bidi,pyjnius
+# المتطلبات المتوافقة تماماً بدون مشاكل مكتبات أندرويد
+requirements = python3,kivy,Pillow,qrcode,arabic-reshaper,python-bidi,pyjnius,openssl,certifi,urllib3
 
 android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,CAMERA,VIBRATE,WAKE_LOCK
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
 
-# لازم الاتنين مع بعض عشان اغلب الموبايلات
+# دعم المعماريتين معاً لضمان التشغيل علي كافة الموبايلات الحديثة والقديمة
 android.archs = arm64-v8a, armeabi-v7a
 
 icon.filename = %(source.dir)s/icon.png
@@ -28,7 +28,6 @@ p4a.bootstrap = sdl2
 p4a.branch = v2024.01.21
 p4a.fork = kivy
 
-# عشان يسمح بالبورت بتاع السيرفر
 p4a.whitelist = libffi,openssl,sqlite3
 
 orientation = portrait
