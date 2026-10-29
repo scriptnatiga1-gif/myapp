@@ -45,8 +45,15 @@ jobs:
             zlib1g-dev libncurses5-dev libtinfo6 \
             libffi-dev libssl-dev libltdl-dev
 
-      - name: Check Python syntax
-        run: python -m py_compile main.py
+      - name: Check Python syntax and required entry files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f main.py
+          test -f app_main.py
+          test -f buildozer.spec
+          python -m py_compile main.py app_main.py
+          grep -n '^p4a.branch = v2024.01.21$' buildozer.spec
 
       - name: Install Buildozer
         run: |
@@ -94,7 +101,7 @@ jobs:
           # Remove only generated build/venv files; keep the SDK and project source.
           rm -rf .buildozer/android/platform/build-arm64-v8a_armeabi-v7a
           rm -rf .buildozer/android/platform/python-for-android
-          echo "Pinned python-for-android branch: v2024.01.21"
+          echo "python-for-android branch verified above: v2024.01.21"
           grep -n '^p4a.branch' buildozer.spec
 
       - name: Build debug APK
