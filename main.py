@@ -1,18 +1,24 @@
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.screenmanager import ScreenManager, Screen, FadeTransition
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
 from kivy.uix.popup import Popup
+from kivy.uix.switch import Switch
 from kivy.uix.scrollview import ScrollView
+from kivy.animation import Animation
+from kivy.graphics import Color, RoundedRectangle, Rectangle
 from kivy.core.text import LabelBase
 import http.server, json, os, threading, base64, socket, re, subprocess
 from datetime import datetime
 from collections import OrderedDict
 import urllib.parse, mimetypes, socketserver
 
-# --- دعم اللغة العربية وشكل النصوص ---
+# --- إعداد ودعم اللغة العربية وشكل النصوص ---
 try:
     import arabic_reshaper
     from bidi.algorithm import get_display
@@ -21,6 +27,7 @@ except ImportError:
     HAS_ARABIC_SUPPORT = False
 
 def ar(text):
+    """إعادة تشكيل النص العربي ليظهر بصورة صحيحة وبدون مربعات"""
     if not text:
         return ""
     if HAS_ARABIC_SUPPORT:
@@ -31,11 +38,13 @@ def ar(text):
             return str(text)
     return str(text)
 
+# البحث عن خط Amiri-Regular.ttf أو الخطوط الداعمة للعربية
 SYSTEM_ARABIC_FONT = None
 FONT_CANDIDATES = [
     "Amiri-Regular.ttf",
     "/system/fonts/NotoNaskhArabic-Regular.ttf",
     "/system/fonts/DroidSansArabic.ttf",
+    "/system/fonts/NotoColorEmoji.ttf",
     "arial.ttf",
     "tajawal.ttf"
 ]
@@ -45,11 +54,8 @@ for font_path in FONT_CANDIDATES:
         break
 
 if SYSTEM_ARABIC_FONT:
-    try:
-        LabelBase.register(name="ArabicFont", fn_regular=SYSTEM_ARABIC_FONT)
-        DEFAULT_FONT_NAME = "ArabicFont"
-    except Exception:
-        DEFAULT_FONT_NAME = None
+    LabelBase.register(name="ArabicFont", fn_regular=SYSTEM_ARABIC_FONT)
+    DEFAULT_FONT_NAME = "ArabicFont"
 else:
     DEFAULT_FONT_NAME = None
 
@@ -70,50 +76,104 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = BASE_DIR
 DATA_FILE = os.path.join(DATA_DIR, "attendance.json")
 CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
+LATEST_FILE = os.path.join(DATA_DIR, "latest_link.txt")
 
 def configure_storage(app=None):
-    global DATA_DIR, DATA_FILE, CONFIG_FILE
+    global DATA_DIR, DATA_FILE, CONFIG_FILE, LATEST_FILE
     target = BASE_DIR
     try:
         if app is not None and getattr(app, "user_data_dir", None):
             target = app.user_data_dir
     except Exception:
         pass
-    try:
-        os.makedirs(target, exist_ok=True)
-    except Exception:
-        pass
+    os.makedirs(target, exist_ok=True)
+    old_paths = {
+        "attendance.json": os.path.join(BASE_DIR, "attendance.json"),
+        "config.json": os.path.join(BASE_DIR, "config.json"),
+        "latest_link.txt": os.path.join(BASE_DIR, "latest_link.txt"),
+    }
+    for name, old_path in old_paths.items():
+        new_path = os.path.join(target, name)
+        if os.path.abspath(old_path) != os.path.abspath(new_path) and os.path.isfile(old_path) and not os.path.exists(new_path):
+            try:
+                import shutil
+                shutil.copy2(old_path, new_path)
+            except Exception as exc:
+                print("Data migration warning:", name, exc)
     DATA_DIR = target
     DATA_FILE = os.path.join(DATA_DIR, "attendance.json")
     CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
+    LATEST_FILE = os.path.join(DATA_DIR, "latest_link.txt")
 
 DEFAULT_ADMIN_PASS = "mansour2026"
-DEFAULT_CFG = {
-    "lecturePass": "", "open": "0", "s": "", "max_active": 32, "stay_seconds": 2.0,
-    "ip_check": False, "nid_check": True, "device_check": True, "hw_check": False,
-    "android_check": True, "black_nids": [], "black_ips": [], "white_ips": [],
-    "after_msg": "✅ تم التسجيل في موبايل الدكتور",
-    "done_msg": "✅ تم تسجيل حضورك - توجه لمعمل 3 عند م/ احمد",
-    "batch": 5, "adminPass": DEFAULT_ADMIN_PASS, "local_app_enabled": True, "lang": "ar"
-}
+DEFAULT_CFG = {"lecturePass": "", "open": "0", "s": "", "max_active": 32, "stay_seconds": 2.0, "ip_check": False, "nid_check": True, "device_check": True, "hw_check": False, "android_check": True, "black_nids": [], "black_ips": [], "white_ips": [], "after_msg": "✅ تم التسجيل في موبايل الدكتور", "done_msg": "✅ تم تسجيل حضورك - توجه لمعمل 3 عند م/ احمد", "batch": 5, "adminPass": DEFAULT_ADMIN_PASS, "local_app_enabled": True}
 active_ips = OrderedDict()
 waiting_queue = OrderedDict()
 
 def get_real_ip():
+    """الدالة المحدثة لجلب الـ IP الحقيقي ومنع مشاكل 127.0.0.1"""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
-        if ip and not ip.startswith("127."):
-            return ip
-    except:
-        pass
+        if ip.startswith("127."): return "192.168.43.1"
+        return ip
+    except: return "192.168.43.1"
+
+def get_interface_ips():
+    ips = []
+    try:
+        out = ""
+        for cmd in ["ip addr show", "ip -4 addr", "ifconfig"]:
+            try:
+                out = subprocess.check_output(cmd, shell=True, timeout=2, stderr=subprocess.STDOUT).decode('utf-8','ignore')
+                if "inet " in out: break
+            except: continue
+        found = re.findall(r'inet\s+(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)', out)
+        for ip in found:
+            if not ip.startswith("127.") and ip not in ips: ips.append(ip)
+    except: pass
+    return ips
+
+def get_primary_ip():
+    real = get_real_ip()
+    if real and not real.startswith("127."): return real
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        if ip and not ip.startswith("127."): return ip
+    except: pass
     return "192.168.43.1"
 
 def get_local_ips():
-    ips = [get_real_ip()]
-    return ips
+    ips = []
+    seen = set()
+    for ip in get_interface_ips():
+        if ip not in seen: ips.append(ip); seen.add(ip)
+    primary = get_primary_ip()
+    if primary and primary not in seen: ips.append(primary); seen.add(primary)
+    try:
+        hostname = socket.gethostname()
+        for ip in socket.gethostbyname_ex(hostname)[2]:
+            if not ip.startswith("127.") and ip not in seen: ips.append(ip); seen.add(ip)
+    except: pass
+    def sort_key(ip):
+        if ip == primary: return (0, ip)
+        if ip.startswith("192.168.0."): return (1, ip)
+        if ip.startswith("192.168.1."): return (1, ip)
+        if ip.startswith("192.168.43."): return (2, ip)
+        if ip.startswith("192.168."): return (3, ip)
+        if ip.startswith("10."): return (2, ip)
+        return (4, ip)
+    ips_sorted = sorted(list(set(ips)), key=sort_key)
+    if primary and primary in ips_sorted:
+        ips_sorted.remove(primary)
+        ips_sorted = [primary] + ips_sorted
+    return ips_sorted
 
 def normalize_nid(value):
     value = str(value or '').strip()
@@ -141,26 +201,42 @@ def valid_national_id(value):
 
 def load_cfg():
     if not os.path.exists(CONFIG_FILE):
-        c = DEFAULT_CFG.copy()
+        c=DEFAULT_CFG.copy()
         save_cfg(c)
         return c
     try:
         with open(CONFIG_FILE,'r',encoding='utf-8') as f:
-            d = json.load(f)
+            d=json.load(f)
             for k,v in DEFAULT_CFG.items():
                 if k not in d: d[k]=v
             return d
     except: return DEFAULT_CFG.copy()
 
 def save_cfg(c):
-    try:
-        with open(CONFIG_FILE,'w',encoding='utf-8') as f: json.dump(c,f,ensure_ascii=False,indent=2)
-    except: pass
+    with open(CONFIG_FILE,'w',encoding='utf-8') as f: json.dump(c,f,ensure_ascii=False,indent=2)
+
+def free_ip(ip):
+    if ip in active_ips: del active_ips[ip]
+    if ip in waiting_queue: del waiting_queue[ip]
+
+def get_wait_msg(pos, max_a, stay, batch):
+    est_sec = (pos / batch) * stay + 5
+    m = int(est_sec // 60); s = int(est_sec % 60)
+    time_str = f"{m} دقيقة {s} ثانية" if m>0 else f"{s} ثانية"
+    if pos <= 10: return f"⏳ فاضل قدامك {pos} بس - خليك فاتح الصفحة هتدخل لوحدك كمان {time_str}", 3
+    elif pos <= 50: return f"🧘‍♂️ دورك رقم {pos} - السيستم بيدخل {batch} كل {stay} ثانية - سيب الموبايل مفتوح - متوقع {time_str}", 5
+    else: return f"😅 انت رقم {pos} - الوقت المتوقع حوالي {time_str} - سيب الصفحة مفتوحة متعملش تحديث، هتدخل لوحدك", 8
 
 def find_logo_file():
     for n in ["logo.jpg","logo.jpeg","logo.png","logo.webp","logo.JPG","logo.PNG","LOGO.jpg","LOGO.png","logo.jfif","institute.jpg"]:
         p = os.path.join(BASE_DIR, n)
         if os.path.exists(p): return p
+    try:
+        for f in os.listdir(BASE_DIR):
+            lf = f.lower()
+            if lf.endswith(('.jpg','.jpeg','.png','.webp','.jfif')) and ('logo' in lf or 'شعار' in lf or 'institute' in lf or 'معهد' in lf):
+                return os.path.join(BASE_DIR, f)
+    except: pass
     return None
 
 def get_logo_tag(size=90, with_margin=True):
@@ -178,54 +254,441 @@ def get_logo_tag(size=90, with_margin=True):
         except: pass
     return f'<div style="text-align:center;{mb}"><div style="width:{size}px;height:{size}px;background:linear-gradient(135deg,#1a73e8,#0f172a);border-radius:18px;margin:0 auto;display:flex;align-items:center;justify-content:center;color:#fff;font-size:{int(size*0.4)}px;font-weight:800">🎓</div></div>'
 
-SOCIAL_FOOTER = """<div style="margin-top:28px;padding:16px 10px;border-top:1px solid #e2e8f0;text-align:center;background:linear-gradient(180deg,#fff,#f8fafc);border-radius:0 0 18px 18px"><div style="font-size:11px;color:#64748b;line-height:1.8"><div>الكلية التكنولوجية بالمحلة الكبرى</div><div>المعهد الصناعي بالمحلة</div><div style="font-weight:800;color:#0f172a">د.م/ محمود منصور</div><div style="margin-top:6px;font-size:10px">© حقوق محفوظة لـ م/ محمود منصور 2026</div></div></div>"""
+def get_header_logo_tag():
+    lf = find_logo_file()
+    if lf:
+        try:
+            with open(lf,'rb') as f:
+                data = f.read()
+                if len(data) > 100:
+                    b64 = base64.b64encode(data).decode('utf-8')
+                    mime,_ = mimetypes.guess_type(lf)
+                    if not mime: mime='image/jpeg'
+                    return f'<img src="data:{mime};base64,{b64}" style="width:44px;height:44px;border-radius:12px;object-fit:cover;border:2px solid #fff;display:block;flex-shrink:0">'
+        except: pass
+    return '<div style="width:44px;height:44px;background:linear-gradient(135deg,#60a5fa,#1d4ed8);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:#fff;flex-shrink:0">🎓</div>'
+
+def simple_hash(s):
+    h = 0
+    for ch in s:
+        h = ((h << 5) - h) + ord(ch)
+        h = h & 0xFFFFFFFF
+        if h >= 0x80000000: h -= 0x100000000
+    return format(abs(h), '36')
+
+SOCIAL_FOOTER = """<div style="margin-top:28px;padding:16px 10px;border-top:1px solid #e2e8f0;text-align:center;background:linear-gradient(180deg,#fff,#f8fafc);border-radius:0 0 18px 18px"><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:10px"><a href="https://twitter.com/eng_mahmoud_man?s=07" target="_blank" style="width:36px;height:36px;background:#000;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:800;font-size:14px">𝕏</a><a href="https://github.com/natiga-script" target="_blank" style="width:36px;height:36px;background:#0f172a;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:11px;font-weight:800">GH</a><a href="https://www.facebook.com/profile.php?id=100009579078219" target="_blank" style="width:36px;height:36px;background:#1877F2;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:800">f</a><a href="https://www.linkedin.com/in/eng-mahmoud-mansour" target="_blank" style="width:36px;height:36px;background:#0A66C2;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:12px;font-weight:800">in</a><a href="https://www.instagram.com/eng_mahmoud_mansour/" target="_blank" style="width:36px;height:36px;background:radial-gradient(circle at 30% 107%,#fdf497 0%,#fdf497 5%,#fd5949 45%,#d6249f 60%,#285AEB 90%);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:11px;font-weight:800">IG</a></div><div style="font-size:11px;color:#64748b;line-height:1.8"><div>الكلية التكنولوجية بالمحلة الكبرى</div><div>المعهد الصناعي بالمحلة</div><div style="font-weight:800;color:#0f172a">د.م/ محمود منصور</div><div style="margin-top:6px;font-size:10px">© حقوق محفوظة لـ م/ محمود منصور 2026</div></div></div>"""
 
 def build_att_html():
-    cfg = load_cfg()
+    cfg=load_cfg()
     LOGO_TAG = get_logo_tag(size=90, with_margin=True)
     real_ip = get_real_ip()
-    return f"""<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>تسجيل الحضور</title><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet"><style>*{{box-sizing:border-box}}body{{margin:0;font-family:'Tajawal',Tahoma;background:linear-gradient(135deg,#dbeafe,#f0f9ff,#ffffff);min-height:100vh;padding:12px;display:flex;flex-direction:column}}.card{{max-width:440px;margin:auto;background:#fff;padding:22px;border-radius:22px;box-shadow:0 12px 40px rgba(15,23,42,.12);border:1px solid #e2e8f0;width:100%}}input{{width:100%;padding:13px;margin:7px 0;border:1px solid #cbd5e1;border-radius:14px;font-size:15px;background:#f8fafc;outline:none}}button{{width:100%;padding:14px;background:linear-gradient(135deg,#1a73e8,#0d47a1);color:#fff;border:none;border-radius:14px;font-size:17px;font-weight:800;cursor:pointer}}.msgbox{{display:none;padding:13px;border-radius:12px;margin-top:12px;font-weight:800;text-align:center}}#msgBox{{background:#fee2e2;color:#991b1b}}#ok{{background:#dcfce7;color:#166534}}</style></head><body><div class="card">{LOGO_TAG}<div style="text-align:center"><h3>تسجيل الحضور V2.3</h3><p>د.م/ محمود منصور</p></div><input id="pass" placeholder="كلمة سر المحاضرة" type="password"><input id="board" placeholder="رقم السبورة" type="number"><input id="name" placeholder="الاسم رباعي"><input id="nid" placeholder="الرقم القومي (14 رقم)" maxlength="14"><button onclick="sendData()">ارسال الحضور</button><div id="msgBox" class="msgbox"></div><div id="ok" class="msgbox">{cfg['after_msg']}</div>{SOCIAL_FOOTER}</div><script>
-async function sendData(){{let p=document.getElementById('pass').value,b=document.getElementById('board').value,n=document.getElementById('name').value,id=document.getElementById('nid').value;let r=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pass:p,board:b,name:n,nid:id})});if(r.status==200)document.getElementById('ok').style.display='block';else alert('خطأ في البيانات أو المحاضرة مغلقة');}}
+    return f"""<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>تسجيل الحضور</title><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet"><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script><style>*{{box-sizing:border-box}}body{{margin:0;font-family:'Tajawal',Tahoma;background:linear-gradient(135deg,#dbeafe,#f0f9ff,#ffffff);min-height:100vh;padding:12px;display:flex;flex-direction:column}}.card{{max-width:440px;margin:auto;background:#fff;padding:22px;border-radius:22px;box-shadow:0 12px 40px rgba(15,23,42,.12);border:1px solid #e2e8f0;width:100%}}.header-lines{{text-align:center;line-height:1.7;margin:8px 0 14px 0}}.t1{{font-size:20px;font-weight:800;color:#0f172a}}.t2{{font-size:13px;color:#334155}}.t3{{font-size:13px;color:#334155}}.t4{{font-size:14px;font-weight:800;color:#1a73e8}}input{{width:100%;padding:13px 14px;margin:7px 0;border:1px solid #cbd5e1;border-radius:14px;font-size:15px;font-family:'Tajawal';background:#f8fafc;outline:none}} input.bad{{border-color:#dc2626;background:#fef2f2}}button{{width:100%;padding:14px;background:linear-gradient(135deg,#1a73e8,#0d47a1);color:#fff;border:none;border-radius:14px;font-size:17px;font-weight:800;font-family:'Tajawal';cursor:pointer}}button:disabled{{opacity:.4;cursor:not-allowed;background:#94a3b8!important}}.msgbox{{display:none;padding:13px;border-radius:12px;margin-top:12px;font-weight:800;font-size:15px;text-align:center}}#msgBox{{background:#fee2e2;color:#991b1b;border:2px solid #fecaca}}#ok{{background:#dcfce7;color:#166534;border:1px solid #bbf7d0}}#exist,#ipblock,#wrong,#black,#deviceblock,#hwblock{{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}}#closed{{background:#fef9c3;color:#854d0e;border:1px solid #fde68a}}#timer{{background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;padding:9px 16px;border-radius:999px;font-size:13px;font-weight:800;display:none;margin:10px auto;width:fit-content}}</style></head><body><div class="card">{LOGO_TAG}<div class="header-lines"><div class="t1">📝 تسجيل الحضور V2.3 APK</div><div class="t2">الكلية التكنولوجية بالمحلة الكبرى</div><div class="t3">المعهد الصناعي بالمحلة</div><div class="t4">د.م/ محمود منصور - IP مفتوح</div><div style="font-size:12px;color:#475569;margin-top:6px">IP الحالي: <b id="currentIp">{real_ip}:8080</b></div><div id="studentQr" style="display:flex;justify-content:center;margin:10px auto"></div><button type="button" onclick="location.href='/local-app'" style="margin-bottom:8px;background:#0f766e">📱 دخول كطالب من نفس التطبيق</button></div><div id="timer">⏳ باقي: <span id="t">--:--</span></div><input id="pass" placeholder="كلمة سر المحاضرة"><input id="board" type="number" inputmode="numeric" placeholder="رقم السبورة"><input id="name" placeholder="الاسم رباعي عربي"><input id="nid" type="tel" maxlength="14" inputmode="numeric" placeholder="الرقم القومي 14 رقم"><button id="btn" onclick="sendData()">ارسال الحضور</button><div id="msgBox" class="msgbox"></div><div id="ok" class="msgbox">{cfg['after_msg']}</div><div id="exist" class="msgbox">⚠️ الرقم القومي مسجل</div><div id="ipblock" class="msgbox">❌ IP مكرر (الخاصية مقفولة حاليا)</div><div id="deviceblock" class="msgbox">❌ الجهاز سجل قبل كده</div><div id="hwblock" class="msgbox">❌ بصمة الجهاز مكررة</div><div id="closed" class="msgbox">⛔ مقفول</div><div id="wrong" class="msgbox">❌ كلمة السر غلط</div><div id="black" class="msgbox">⛔ محظور</div>{SOCIAL_FOOTER}</div><script>
+const SECRET="Mn2026_Secret_@#_KEY";let serverOffset=0;let isClosedByAdmin=false;let qrInstance=null;function renderStudentQr(url){{let box=document.getElementById("studentQr");if(!box)return;box.innerHTML="";if(window.QRCode){{new QRCode(box,{{text:url,width:132,height:132}});}}else{{box.innerHTML="<small>افتح الرابط من نفس الشبكة: "+url+"</small>";}}}}async function refreshStudentIps(){{try{{let r=await fetch("/my_ips",{{cache:"no-store"}});let j=await r.json();let ip=j.primary||(j.ips||[])[0]||"{real_ip}";document.getElementById("currentIp").innerText=ip+":8080";let u="http://"+ip+":8080"+location.pathname+location.search;renderStudentQr(u);}}catch(e){{let ip='{real_ip}';document.getElementById('currentIp').innerText=ip+':8080';renderStudentQr('http://'+ip+':8080'+location.pathname+location.search);}}}}
+function getHardwareFingerprint(){{try{{let fp=[navigator.userAgent,screen.width,navigator.language].join('|');let h=0;for(let i=0;i<fp.length;i++){{h=((h<<5)-h)+fp.charCodeAt(i);h=h&h;}}return 'hw_'+Math.abs(h).toString(36);}}catch(e){{return 'hw_err';}}}}
+function getDeviceId(){{let s=localStorage.getItem('device_fingerprint');if(s)return s;let id=getHardwareFingerprint()+'_'+Math.random().toString(36).slice(2,6);localStorage.setItem('device_fingerprint',id);return id;}}
+function isAlreadyRegisteredLocally(){{return localStorage.getItem('already_registered_'+getDeviceId())==='1' || localStorage.getItem('my_nid_registered')!==null;}}
+function markAsRegistered(nid){{localStorage.setItem('already_registered_'+getDeviceId(),'1');localStorage.setItem('my_nid_registered',nid);}}
+function applyAlreadyRegisteredUI(){{if(isAlreadyRegisteredLocally()){{let btn=document.getElementById('btn');btn.disabled=true;btn.innerText='✅ سجلت قبل كده';document.getElementById('closed').style.display='block';document.getElementById('closed').innerText='✅ سجلت من الجهاز ده - استخدم جهاز تاني لزميلك';return true;}}return false;}}
+async function syncTime(){{try{{let r=await fetch('/time');let d=await r.json();serverOffset=d.server-Date.now();}}catch(e){{}}}}
+function nowSynced(){{return Date.now()+serverOffset;}}
+function simpleHash(s){{let h=0;for(let i=0;i<s.length;i++){{h=((h<<5)-h)+s.charCodeAt(i);h=h&h;}}return Math.abs(h).toString(36);}}
+function getParams(){{let p=new URLSearchParams(location.search);return {{open:p.get('open'),s:p.get('s')}};}}let cached=getParams();
+function showMsg(t,id){{let b=document.getElementById('msgBox');b.innerText=t;b.style.display='block';}}
+function hideAll(){{['ok','exist','ipblock','deviceblock','hwblock','wrong','closed','black','msgBox'].forEach(x=>document.getElementById(x).style.display='none');}}
+function forceCloseAll(msg){{isClosedByAdmin=true;let btn=document.getElementById('btn'),tm=document.getElementById('timer'),cl=document.getElementById('closed');tm.style.display='none';cl.style.display='block';cl.innerText=msg||'⛔ الادمن قفل';btn.disabled=true;}}
+function updateTimer(){{if(isClosedByAdmin)return;let o=cached.open,s=cached.s,btn=document.getElementById('btn'),cl=document.getElementById('closed'),tm=document.getElementById('timer');if(applyAlreadyRegisteredUI()){{tm.style.display='none';return;}}if(!o||!s||simpleHash(o+SECRET)!==s){{tm.style.display='none';cl.style.display='none';btn.disabled=false;return;}}let v=parseInt(o);if(nowSynced()>v){{tm.style.display='none';cl.style.display='block';cl.innerText='⛔ انتهى الوقت';btn.disabled=true;return;}}tm.style.display='block';cl.style.display='none';btn.disabled=false;let d=v-nowSynced(),m=Math.floor(d/60000),sc=Math.floor((d%60000)/1000);document.getElementById('t').innerText=m+':'+(sc<10?'0':'')+sc;}}
+async function checkIfClosedByAdmin(){{try{{let r=await fetch('/get_config');let j=await r.json();if(!j.open||j.open=="0"||parseInt(j.open)<nowSynced()){{forceCloseAll('⛔ الادمن قفل التسجيل');}}}}catch(e){{}}}}
+syncTime().then(()=>{{applyAlreadyRegisteredUI();setInterval(updateTimer,1000);updateTimer();setInterval(checkIfClosedByAdmin,2000);refreshStudentIps();setInterval(refreshStudentIps,1000);}});
+async function sendData(){{
+ if(isAlreadyRegisteredLocally()){{applyAlreadyRegisteredUI();return;}}
+ hideAll();
+ let p=document.getElementById('pass').value.trim(),b=document.getElementById('board').value.trim(),n=document.getElementById('name').value.trim(),id=document.getElementById('nid').value.trim();
+ if(!p||!b||!n||!id){{showMsg('اكمل البيانات');return;}}id=id.replace(/[٠-٩۰-۹]/g,c=>'٠١٢٣٤٥٦٧٨٩'.includes(c)?'٠١٢٣٤٥٦٧٨٩'.indexOf(c):'۰۱۲۳۴۵۶۷۸۹'.indexOf(c)).replace(/[^0-9]/g,'');if(!/^\\d{{14}}$/.test(id)){{showMsg('الرقم القومي يجب أن يتكون من 14 رقمًا صحيحًا');document.getElementById('nid').classList.add('bad');return;}}document.getElementById('nid').classList.remove('bad');
+ try{{
+  let r=await fetch('/save',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{open:cached.open||'',s:cached.s||'',name:n,nid:id,board:b,pass:p,deviceId:getDeviceId(),hwId:getHardwareFingerprint(),androidId:'',localApp:new URLSearchParams(location.search).get('local-app')==='1'}})}});
+  hideAll();
+  if(r.status==200){{markAsRegistered(id);document.getElementById('ok').style.display='block';let d=await r.json();if(d.redirect)location.href=d.redirect;}}
+  else if(r.status==409)document.getElementById('exist').style.display='block';
+  else if(r.status==410)document.getElementById('ipblock').style.display='block';
+  else if(r.status==411)document.getElementById('deviceblock').style.display='block';
+  else if(r.status==412)document.getElementById('hwblock').style.display='block';
+  else if(r.status==422)showMsg('الرقم القومي غير صحيح: راجع 14 رقمًا وتاريخ الميلاد والمحافظة');else if(r.status==401)document.getElementById('wrong').style.display='block';
+  else document.getElementById('closed').style.display='block';
+ }}catch(e){{showMsg('مش متصل');}}
+}}
+</script></body></html>"""
+
+def build_admin_html():
+    cfg=load_cfg()
+    LOGO_TAG = get_logo_tag(size=90, with_margin=True)
+    HEADER_LOGO = get_header_logo_tag()
+    ips = get_local_ips()
+    primary = get_real_ip()
+    router_ip = primary
+    hotspot_ip = primary
+    for ip in ips:
+        if ip.startswith("192.168.0.") or ip.startswith("192.168.1."): router_ip = ip; break
+    for ip in ips:
+        if ip.startswith("192.168.43.") or ip.startswith("192.168.137."): hotspot_ip = ip; break
+    if primary and primary.startswith("10."): hotspot_ip = primary
+    ips_html = ", ".join(ips)
+    return f"""<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>لوحة تحكم APK V2.3</title><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet"><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script><style>*{{box-sizing:border-box}}body{{margin:0;font-family:'Tajawal',Tahoma;background:linear-gradient(135deg,#eef2ff,#f5f7fb);padding:12px}} .container{{max-width:1100px;margin:auto}} .hidden{{display:none!important}} .header{{background:linear-gradient(135deg,#1e293b,#0f172a);color:#fff;padding:16px;border-radius:20px;display:flex;justify-content:space-between}} .stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:14px 0}} .stat{{background:#fff;border-radius:16px;padding:14px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.06)}} .stat b{{display:block;font-size:26px;color:#1a73e8}} .card{{background:#fff;border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:0 6px 20px rgba(0,0,0,.05)}} .card-title{{font-weight:800;margin-bottom:12px}} label{{font-size:12px;font-weight:700}} input,textarea{{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:12px;margin:4px 0}} .btn{{padding:12px 16px;border:none;border-radius:12px;font-weight:800;cursor:pointer}} .btn-primary{{background:#1a73e8;color:#fff}} .btn-success{{background:#16a34a;color:#fff}} .btn-danger{{background:#dc2626;color:#fff}} .btn-dark{{background:#0f172a;color:#fff}} .btn-warn{{background:#f59e0b;color:#fff}} .btn-light{{background:#f1f5f9}} .toolbar{{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}} .table-wrap{{overflow:auto}} table{{width:100%;border-collapse:collapse;min-width:750px}} th{{background:#0f172a;color:#fff;padding:10px}} td{{padding:8px;border-bottom:1px solid #eee;text-align:center}} #loginBox{{max-width:400px;margin:50px auto;background:#fff;padding:24px;border-radius:22px;text-align:center}} #adminTimer{{background:#fff;color:#0f172a;padding:8px 14px;border-radius:999px;font-size:12px;font-weight:800}} .linkBox{{background:#f8fafc;border:1px dashed #94a3b8;border-radius:12px;padding:10px;margin-top:8px}} .linkRow{{display:flex;gap:6px;margin:6px 0}}</style></head><body><div id="loginBox">{LOGO_TAG}<h2>دخول ادمن APK V2.3</h2><p style="font-size:12px;color:#64748b">الكلية التكنولوجية - د.م/ محمود منصور<br>Serial: {ANDROID_SERIAL[:12]} - IP مفتوح</p><input id="adminPass" type="password" placeholder="باسورد الادمن"><button onclick="login()" class="btn btn-primary" style="width:100%;margin-top:12px">🔐 دخول</button><p id="loginErr" style="display:none;color:#dc2626">غلط</p>{SOCIAL_FOOTER}</div><div id="dash" class="container hidden"><div class="header"><div style="display:flex;align-items:center;gap:10px">{HEADER_LOGO}<div><div style="font-weight:800">APK V2.3 Pro - IP مفتوح + سيريال + Logo</div><div style="font-size:11px;opacity:.8">الكلية التكنولوجية - د.م/ محمود منصور</div></div></div><div style="display:flex;gap:8px"><div id="adminTimer">⏱️ <span id="adminT">--:--</span></div><div id="status" style="padding:8px 14px;border-radius:999px;background:#fff;color:#0f172a">🔴 مقفول</div><button onclick="logout()" class="btn btn-light" style="padding:8px">🚪</button></div></div><div class="stats"><div class="stat"><b id="activeCount">0</b><span>النشط</span><div style="font-size:11px">/ <span id="maxCount">{cfg['max_active']}</span></div></div><div class="stat"><b id="waitCount">0</b><span>انتظار</span></div><div class="stat"><b id="count">0</b><span>اجمالي</span></div><div class="stat"><b id="lastMin">0</b><span>اخر دقيقة</span></div><div class="stat"><b id="showCount">0</b><span>المعروض</span></div></div><div class="card" style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1px solid #fcd34d"><div class="card-title">🔑 تغيير باسورد الادمن</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label>القديم</label><input id="oldAdminPass" type="password"></div><div><label>الجديد</label><input id="newAdminPass" type="password"></div></div><button onclick="changeAdminPass()" class="btn btn-warn" style="width:100%;margin-top:10px">🔒 تغيير</button><div id="adminPassMsg" style="display:none;margin-top:8px;padding:10px;border-radius:10px;text-align:center"></div></div><div class="card" style="background:linear-gradient(135deg,#f8fafc,#eef2ff);border:1px dashed #93c5fd"><div class="card-title">⚙️ 1- اعدادات الطابور - IP مفتوح افتراضي</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label>عدد الطابور</label><input id="maxActive" type="number" value="{cfg['max_active']}"></div><div><label>دفعات</label><input id="batch" type="number" value="{cfg['batch']}"></div></div><div><label>مدة بقاء الطالب</label><div style="display:flex;gap:8px"><input id="staySec" type="range" min="1" max="10" step="0.5" value="{cfg['stay_seconds']}" style="flex:1"><span id="stayVal">{cfg['stay_seconds']}s</span></div></div><label>رسالة التسجيل</label><textarea id="afterMsg">{cfg['after_msg']}</textarea><label>رسالة /done</label><textarea id="doneMsg">{cfg['done_msg']}</textarea><button onclick="saveAdv()" class="btn btn-dark" style="width:100%;margin-top:10px">💾 حفظ الاعدادات</button></div><div class="card" style="background:#fffbeb"><div class="card-title">🔒 2- تحكم التسجيل - APK</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label style="display:flex;gap:6px"><input type="checkbox" id="ipCheck" {"checked" if cfg['ip_check'] else ""} style="width:auto"> IP واحد = طالب واحد (شيل الصح عشان هوت سبوت 30 طالب)</label></div><div><label style="display:flex;gap:6px"><input type="checkbox" id="nidCheck" {"checked" if cfg['nid_check'] else ""} style="width:auto"> منع القومي المكرر</label></div><div><label style="display:flex;gap:6px"><input type="checkbox" id="deviceCheck" {"checked" if cfg.get('device_check',True) else ""} style="width:auto"> 🔒 منع نفس الجهاز VPN</label></div><div><label style="display:flex;gap:6px"><input type="checkbox" id="hwCheck" {"checked" if cfg.get('hw_check',True) else ""} style="width:auto"> منع بصمة الجهاز hwId</label></div><div><label style="display:flex;gap:6px"><input type="checkbox" id="androidCheck" {"checked" if cfg.get('android_check',True) else ""} style="width:auto"> منع سيريال اندرويد</label></div></div><label>قائمة سوداء قومي</label><textarea id="blackNids">{','.join(cfg['black_nids'])}</textarea><label>سوداء IP</label><textarea id="blackIps">{','.join(cfg['black_ips'])}</textarea><label>بيضاء IP</label><textarea id="whiteIps">{','.join(cfg['white_ips'])}</textarea></div><div class="card"><div class="card-title">🔑 3- فتح المحاضرة</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label>كلمة سر المحاضرة</label><input id="lecturePass" placeholder="2026"></div><div><label>المدة بالدقائق</label><input id="minutes" type="number" value="30"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button onclick="openNow()" class="btn btn-success" style="flex:2">✅ افتح</button><button onclick="closeNow()" class="btn btn-danger" style="flex:1">⛔ اقفل</button></div><div id="shareBox" style="display:none;background:#e0f2fe;padding:14px;border-radius:14px;margin-top:14px"><div style="font-weight:800">📡 روابط الطلبة APK:</div><div style="text-align:center;background:#fff;border-radius:12px;padding:12px;margin:10px 0"><div id="adminQr" style="display:flex;justify-content:center"></div><div style="font-size:12px;margin-top:6px">امسح الكود من موبايل الطالب</div></div><div class="linkBox"><div class="linkRow"><b>📱 هوتسبوت APK:</b><input id="shareLinkHotspot" readonly style="direction:ltr;font-size:11px;flex:1"><button onclick="copyById('shareLinkHotspot')" class="btn btn-warn" style="padding:6px">نسخ</button></div><div style="font-size:11px">IP الهوتسبوت: <b>{hotspot_ip}</b> - كل IPs: {ips_html}</div><div style="display:flex;gap:6px;margin-top:6px"><input id="customHotspotIp" value="{hotspot_ip}" style="flex:1"><button onclick="updateHotspotLink()" class="btn btn-light" style="padding:6px">تحديث</button><button onclick="autoDetectIp()" class="btn btn-success" style="padding:6px">🔄 كشف</button></div></div><div class="linkBox" style="background:#dcfce7"><div class="linkRow"><b>📶 روتر:</b><input id="shareLinkRouter" readonly style="direction:ltr;font-size:11px;flex:1"><button onclick="copyById('shareLinkRouter')" class="btn btn-success" style="padding:6px">نسخ</button></div><div style="font-size:11px">IP الراوتر: <b>{router_ip}</b></div><div style="display:flex;gap:6px;margin-top:6px"><input id="customRouterIp" value="{router_ip}" style="flex:1"><button onclick="updateRouterLink()" class="btn btn-light" style="padding:6px">تحديث</button></div></div><div class="linkBox"><div class="linkRow"><b>🖥️ لوكالهوست:</b><input id="shareLinkLocal" readonly style="direction:ltr;font-size:11px;flex:1"><button onclick="copyById('shareLinkLocal')" class="btn btn-dark" style="padding:6px">نسخ</button></div></div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button onclick="window.open(document.getElementById('shareLinkLocal').value,'_blank')" class="btn btn-dark" style="flex:1">🖥️ لوكال</button><button onclick="window.open(document.getElementById('shareLinkRouter').value,'_blank')" class="btn btn-success" style="flex:1">📶 روتر</button><button onclick="window.open(document.getElementById('shareLinkHotspot').value,'_blank')" class="btn btn-warn" style="flex:1">📱 هوتسبوت</button><button onclick="window.open('/projector','_blank')" class="btn btn-light" style="flex:1">🖥️ بروجيكتور</button></div><div style="font-size:12px;margin-top:8px">كلمة السر: <b id="currentPass"></b> | المدة: <b id="currentMin"></b> د</div><div style="font-size:11px;margin-top:8px;color:#64748b;background:#fff;padding:8px;border-radius:8px">روابط الادمن: <code>/admin</code> - كل IPs: {ips_html}<br><b>رابط ثابت للطلبة طول الترم:</b> <code>/go</code> - بيحول اوتوماتيك على اخر محاضرة</div></div></div><div class="card"><div class="card-title">📊 4- البيانات والتصدير</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><input id="search" placeholder="🔍 بحث بالاسم او القومي"><input id="filterBoard" placeholder="فلتر رقم السبورة"></div><div class="toolbar"><button onclick="exportExcel()" class="btn btn-dark">📥 Excel CSV</button><button onclick="window.location.href='/export'" class="btn btn-success">⬇️ تصدير CSV عربي</button><button onclick="exportPDF()" class="btn btn-light">📄 PDF</button><button onclick="copyWhatsapp()" class="btn" style="background:#22c55e;color:#fff">🟢 واتساب</button><button onclick="clearQueue()" class="btn btn-warn">⚠️ فضي الطابور</button><button onclick="clearData()" class="btn btn-light" style="color:#dc2626">🗑️ مسح الكل</button></div><div class="table-wrap"><table id="tbl"><thead><tr><th>#</th><th>الوقت</th><th>الاسم</th><th>القومي</th><th>IP</th><th>الجهاز</th><th>سبورة</th><th>سيريال</th><th>🗑️ حذف</th></tr></thead><tbody></tbody></table></div>{SOCIAL_FOOTER}</div></div><script>
+const SECRET="Mn2026_Secret_@#_KEY";let serverOffset=0;let lastOpen="",lastSig="";
+async function syncTime(){{try{{let r=await fetch('/time');let d=await r.json();serverOffset=d.server-Date.now();}}catch(e){{}}}}
+function nowSynced(){{return Date.now()+serverOffset;}}
+function simpleHash(s){{let h=0;for(let i=0;i<s.length;i++){{h=((h<<5)-h)+s.charCodeAt(i);h=h&h;}}return Math.abs(h).toString(36);}}
+async function checkAuth(){{if(localStorage.getItem('admin_ok')==='1'){{document.getElementById('loginBox').classList.add('hidden');document.getElementById('dash').classList.remove('hidden');await syncTime();try{{let rc=await fetch('/get_config');let scfg=await rc.json();if(scfg.open&&scfg.open!="0"&&parseInt(scfg.open)>nowSynced()){{localStorage.setItem('openUntil',scfg.open);lastOpen=scfg.open;lastSig=scfg.s||simpleHash(scfg.open+SECRET);await autoDetectIp();buildAllLinks();document.getElementById('shareBox').style.display='block';document.getElementById('currentPass').innerText=scfg.lecturePass;let mins=Math.round((parseInt(scfg.open)-nowSynced())/60000);document.getElementById('currentMin').innerText=mins>0?mins:0;}}}}catch(e){{}}refresh();setInterval(()=>{{refresh();updateAdminTimer();}},1000);}}}}
+function drawAdminQr(){{let box=document.getElementById("adminQr");if(!box)return;box.innerHTML="";let u=document.getElementById("shareLinkHotspot")?.value||document.getElementById("shareLinkRouter")?.value||"";if(window.QRCode&&u)new QRCode(box,{{text:u,width:180,height:180}});else box.innerText=u;}}function buildAllLinks(){{if(!lastOpen)return;let host=location.host;let baseLocal=location.protocol+'//'+host;let baseHotspot='http://'+(document.getElementById('customHotspotIp').value.trim()||'{hotspot_ip}')+':8080';let baseRouter='http://'+(document.getElementById('customRouterIp').value.trim()||'{router_ip}')+':8080';let path='/attendance.html?open='+lastOpen+'&s='+lastSig;document.getElementById('shareLinkLocal').value=baseLocal+path;document.getElementById('shareLinkHotspot').value=baseHotspot+path;document.getElementById('shareLinkRouter').value=baseRouter+path;fetch('/__save_latest?link='+encodeURIComponent(path));drawAdminQr();}}
+async function autoDetectIp(){{try{{let rip=await fetch('/my_ips');let j=await rip.json();if(j.primary){{if(j.primary.startsWith('192.168.0.')||j.primary.startsWith('192.168.1.'))document.getElementById('customRouterIp').value=j.primary;if(j.primary.startsWith('10.')||j.primary.startsWith('192.168.43.'))document.getElementById('customHotspotIp').value=j.primary;}}if(j.ips){{let r=j.ips.find(x=>x.startsWith('192.168.0.')||x.startsWith('192.168.1.'));if(r)document.getElementById('customRouterIp').value=r;let h=j.ips.find(x=>x.startsWith('192.168.43.'))||j.ips.find(x=>x.startsWith('10.'));if(h)document.getElementById('customHotspotIp').value=h;}}buildAllLinks();}}catch(e){{}}}}
+function updateHotspotLink(){{buildAllLinks();}}function updateRouterLink(){{buildAllLinks();}}setInterval(()=>{{autoDetectIp();}},1000);
+function copyById(id){{let el=document.getElementById(id);el.select();document.execCommand('copy');alert('تم نسخ:\\n'+el.value);}}
+async function login(){{let p=document.getElementById('adminPass').value;let r=await fetch('/admin_auth',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{pass:p}})}});let d=await r.json();if(d.ok){{localStorage.setItem('admin_ok','1');document.getElementById('loginErr').style.display='none';checkAuth();}}else{{document.getElementById('loginErr').style.display='block';}}}}
+function logout(){{localStorage.removeItem('admin_ok');location.reload();}}
+async function changeAdminPass(){{let oldP=document.getElementById('oldAdminPass').value.trim();let newP=document.getElementById('newAdminPass').value.trim();let msg=document.getElementById('adminPassMsg');if(!oldP||!newP){{msg.style.display='block';msg.style.background='#fee2e2';msg.style.color='#991b1b';msg.innerText='❌ اكتب القديم والجديد';return;}}if(newP.length<4){{msg.style.display='block';msg.style.background='#fee2e2';msg.style.color='#991b1b';msg.innerText='❌ قصير';return;}}let r=await fetch('/change_admin_pass',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{oldPass:oldP,newPass:newP}})}});let d=await r.json();msg.style.display='block';if(d.ok){{msg.style.background='#dcfce7';msg.style.color='#166534';msg.innerText='✅ تم تغيير: '+newP;document.getElementById('oldAdminPass').value='';document.getElementById('newAdminPass').value='';}}else{{msg.style.background='#fee2e2';msg.style.color='#991b1b';msg.innerText='❌ '+(d.error||'خطأ');}}}}
+checkAuth();
+function updateAdminTimer(){{let u=localStorage.getItem('openUntil');let el=document.getElementById('adminT');if(!u){{el.innerText='--:--';return;}}let diff=parseInt(u)-nowSynced();if(diff<=0){{el.innerText='انتهى';return;}}let m=Math.floor(diff/60000),s=Math.floor((diff%60000)/1000);el.innerText=m+':'+(s<10?'0':'')+s;}}
+document.getElementById('staySec')?.addEventListener('input',e=>document.getElementById('stayVal').innerText=e.target.value+'s');
+async function saveAdv(){{let cfg={{max_active:parseInt(document.getElementById('maxActive').value),stay_seconds:parseFloat(document.getElementById('staySec').value),batch:parseInt(document.getElementById('batch').value),after_msg:document.getElementById('afterMsg').value,done_msg:document.getElementById('doneMsg').value,ip_check:document.getElementById('ipCheck').checked,nid_check:document.getElementById('nidCheck').checked,device_check:document.getElementById('deviceCheck').checked,hw_check:document.getElementById('hwCheck').checked,android_check:document.getElementById('androidCheck').checked,black_nids:document.getElementById('blackNids').value.split(',').map(s=>s.trim()).filter(s=>s),black_ips:document.getElementById('blackIps').value.split(',').map(s=>s.trim()).filter(s=>s),white_ips:document.getElementById('whiteIps').value.split(',').map(s=>s.trim()).filter(s=>s)}};await fetch('/save_adv',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(cfg)}});alert('✅ تم حفظ');location.reload();}}
+async function openNow(){{let lp=document.getElementById('lecturePass').value.trim();let mins=parseInt(document.getElementById('minutes').value);if(!lp){{alert('اكتب كلمة السر');return;}}let u=nowSynced()+mins*60*1000;let sig=simpleHash(u.toString()+SECRET);localStorage.setItem('openUntil',u.toString());lastOpen=u.toString();lastSig=sig;await autoDetectIp();buildAllLinks();let sb=document.getElementById('shareBox');if(sb)sb.style.display='block';document.getElementById('currentPass').innerText=lp;document.getElementById('currentMin').innerText=mins;await fetch('/set_config',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{open:u.toString(),s:sig,lecturePass:lp}})}});refresh();}}
+async function closeNow(){{localStorage.removeItem('openUntil');document.getElementById('shareBox').style.display='none';await fetch('/set_config',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{open:"0",s:"",lecturePass:""}})}});refresh();alert('⛔ اتقفل عند كل الطلبة');}}
+let cachedData=[];let lastCounts=[];
+function filterRender(){{let q=document.getElementById('search').value.trim().toLowerCase();let b=document.getElementById('filterBoard').value.trim();let tb=document.querySelector('#tbl tbody');tb.innerHTML='';let filtered=cachedData.filter(x=>{{let ok=true;if(q)ok=x.name.toLowerCase().includes(q)||x.nid.includes(q);if(b)ok=ok&&(x.board||'').includes(b);return ok;}});document.getElementById('showCount').innerText=filtered.length;filtered.forEach((x,i)=>{{tb.innerHTML+=`<tr><td>${{i+1}}</td><td>${{x.time}}</td><td>${{x.name}}</td><td>${{x.nid}}</td><td>${{x.ip||''}}</td><td>${{(x.deviceId||'').slice(0,8)}}</td><td>${{x.board}}</td><td>${{(x.androidId||'').slice(0,8)}}</td><td><button onclick="deleteOne('${{x.nid}}')" class="btn btn-danger" style="padding:4px 8px;font-size:11px">🗑️</button></td></tr>`}});}}
+async function refresh(){{let u=localStorage.getItem('openUntil');let st=document.getElementById('status');if(u&&nowSynced()<parseInt(u)){{st.innerHTML='🟢 مفتوح';st.style.background='#22c55e';st.style.color='#fff';}}else{{st.innerHTML='🔴 مقفول';st.style.background='#fff';st.style.color='#0f172a';}}try{{let r=await fetch('/list');let d=await r.json();cachedData=d.list||[];document.getElementById('count').innerText=cachedData.length;document.getElementById('activeCount').innerText=d.active;document.getElementById('maxCount').innerText=d.max_active;document.getElementById('waitCount').innerText=d.waiting;let now=Date.now();lastCounts.push({{t:now,c:cachedData.length}});lastCounts=lastCounts.filter(x=>now-x.t<60000);let lastMinEl=document.getElementById('lastMin');if(lastCounts.length>1){{let diff=cachedData.length-(lastCounts[0]?.c||0);lastMinEl.innerText=Math.max(0,diff);}}filterRender();}}catch(e){{}}}}
+async function deleteOne(nid){{if(!confirm('تمسح الطالب ده؟ \\n'+nid))return;let r=await fetch('/delete_one',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{nid}})}});let d=await r.json();if(d.ok){{alert('✅ اتمسح');refresh();}}else{{alert('❌ مش لاقيه');}}}}
+document.getElementById('search')?.addEventListener('input',filterRender);document.getElementById('filterBoard')?.addEventListener('input',filterRender);
+function exportExcel(){{if(!cachedData.length){{alert('لا يوجد');return;}}let csv='\\uFEFFالوقت,الاسم,القومي,IP,الجهاز,السبورة,سيريال\\n'+cachedData.map(x=>`"${{x.time}}","${{x.name}}","${{x.nid}}","${{x.ip||''}}","${{x.deviceId||''}}","${{x.board}}","${{x.androidId||''}}"`).join('\\n');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{{type:'text/csv;charset=utf-8;'}}));a.download='attendance_'+new Date().toISOString().slice(0,10)+'.csv';a.click();}}
+function exportPDF(){{let w=window.open('','_blank');let rows=cachedData.map((x,i)=>`<tr><td>${{i+1}}</td><td>${{x.time}}</td><td>${{x.name}}</td><td>${{x.nid}}</td><td>${{x.board}}</td></tr>`).join('');w.document.write(`<html dir="rtl"><head><meta charset="utf-8"><title>PDF</title></head><body><h2>كشف حضور - ${{new Date().toLocaleString('ar-EG')}}</h2><table border="1" style="width:100%;border-collapse:collapse;text-align:center"><tr><th>#</th><th>الوقت</th><th>الاسم</th><th>القومي</th><th>السبورة</th></tr>${{rows}}</table><script>window.print()<\\/script></body></html>`);}}
+function copyWhatsapp(){{if(!cachedData.length){{alert('لا يوجد');return;}}let txt=`كشف حضور ${{new Date().toLocaleDateString('ar-EG')}} - العدد ${{cachedData.length}}\\n`+cachedData.map((x,i)=>`${{i+1}}- ${{x.name}} - ${{x.nid}} - سبورة ${{x.board}}`).join('\\n');navigator.clipboard.writeText(txt).then(()=>alert('تم نسخ للواتساب'))}}
+async function clearQueue(){{if(confirm('تفضي الطابور؟')){{await fetch('/clear_queue',{{method:'POST'}});refresh();}}}}
+async function clearData(){{if(confirm('تمسح الكل؟')){{await fetch('/clear',{{method:'POST'}});refresh();}}}}
 </script></body></html>"""
 
 def ensure_files():
-    try:
-        cfg = load_cfg()
-        save_cfg(cfg)
-        if not os.path.exists(DATA_FILE):
-            with open(DATA_FILE,"w",encoding="utf-8") as f: f.write("[]")
-    except: pass
+    cfg=load_cfg()
+    save_cfg(cfg)
+    if not os.path.exists(DATA_FILE):
+        with open(DATA_FILE,"w",encoding="utf-8") as f: f.write("[]")
 
 class Handler(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, *a): return
+    def log_message(self,*a): return
     def do_POST(self):
-        try:
-            if self.path == '/save':
+        client_ip = self.client_address[0]
+        cfg=load_cfg()
+        if self.path == '/admin_auth':
+            length = int(self.headers.get('content-length',0))
+            body = self.rfile.read(length).decode('utf-8')
+            data = json.loads(body)
+            ok = data.get('pass','') == cfg.get('adminPass', DEFAULT_ADMIN_PASS)
+            self.send_response(200)
+            self.send_header('Content-Type','application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"ok": ok}).encode('utf-8'))
+            return
+        if self.path == '/delete_one':
+            length = int(self.headers.get('content-length',0))
+            body = self.rfile.read(length).decode('utf-8')
+            data = json.loads(body)
+            nid_to_del = data.get('nid','').strip()
+            deleted=False
+            if os.path.exists(DATA_FILE):
+                try:
+                    with open(DATA_FILE,'r',encoding='utf-8') as f: all_data=json.load(f)
+                    new_data=[x for x in all_data if x.get('nid')!=nid_to_del]
+                    if len(new_data)!=len(all_data):
+                        deleted=True
+                        with open(DATA_FILE,'w',encoding='utf-8') as f: json.dump(new_data,f,ensure_ascii=False,indent=2)
+                except: pass
+            self.send_response(200)
+            self.send_header('Content-Type','application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"ok": deleted}).encode('utf-8'))
+            return
+        if self.path == '/change_admin_pass':
+            length = int(self.headers.get('content-length',0))
+            body = self.rfile.read(length).decode('utf-8')
+            data = json.loads(body)
+            old = data.get('oldPass','')
+            new = data.get('newPass','').strip()
+            self.send_response(200)
+            self.send_header('Content-Type','application/json')
+            self.end_headers()
+            if old!= cfg.get('adminPass', DEFAULT_ADMIN_PASS):
+                self.wfile.write(json.dumps({"ok": False, "error": "الباسورد الحالي غلط"}).encode('utf-8')); return
+            if len(new) < 4:
+                self.wfile.write(json.dumps({"ok": False, "error": "الجديد قصير"}).encode('utf-8')); return
+            cfg['adminPass'] = new
+            save_cfg(cfg)
+            self.wfile.write(json.dumps({"ok": True}).encode('utf-8'))
+            return
+        if self.path == '/save_adv':
+            length = int(self.headers.get('content-length',0))
+            body = self.rfile.read(length).decode('utf-8')
+            data = json.loads(body)
+            for k in ["max_active","stay_seconds","batch","after_msg","done_msg","ip_check","nid_check","device_check","hw_check","android_check","black_nids","black_ips","white_ips"]:
+                if k in data: cfg[k]=data[k]
+            save_cfg(cfg)
+            self.send_response(200); self.end_headers(); return
+        if self.path == '/set_config':
+            length = int(self.headers.get('content-length',0))
+            body = self.rfile.read(length).decode('utf-8')
+            data = json.loads(body)
+            cfg["lecturePass"]=data.get('lecturePass','')
+            cfg["open"]=data.get('open','0')
+            cfg["s"]=data.get('s','')
+            save_cfg(cfg)
+            try:
+                if cfg["open"]!="0" and cfg["open"]!="":
+                    link = f"/attendance.html?open={cfg['open']}&s={cfg['s']}"
+                    with open(LATEST_FILE,'w',encoding='utf-8') as f: f.write(link)
+                else:
+                    if os.path.exists(LATEST_FILE): os.remove(LATEST_FILE)
+            except: pass
+            self.send_response(200); self.end_headers(); return
+        if self.path == '/save':
+            try:
                 length = int(self.headers.get('content-length',0))
                 body = self.rfile.read(length).decode('utf-8')
                 data = json.loads(body)
+                now_ms = int(datetime.now().timestamp()*1000)
+                cfg_open = cfg.get('open','0')
+                if cfg_open == "0" or cfg_open == "" or int(cfg_open) < now_ms:
+                    self.send_response(403)
+                    self.send_header('Content-Type','application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"closed":True}).encode('utf-8')); return
+                if cfg.get('lecturePass','').strip() and data.get('pass','').strip()!= cfg.get('lecturePass','').strip():
+                    self.send_response(401); self.end_headers(); return
                 nid = normalize_nid(data.get('nid',''))
                 if not valid_national_id(nid):
-                    self.send_response(422); self.end_headers(); return
-                all_data = []
+                    self.send_response(422)
+                    self.send_header('Content-Type','application/json; charset=utf-8')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error":"الرقم القومي غير صحيح، يجب أن يكون 14 رقمًا وتاريخ الميلاد والمحافظة صحيحين"},ensure_ascii=False).encode('utf-8')); return
+                deviceId = data.get('deviceId','').strip()
+                hwId = data.get('hwId','').strip()
+                androidId = data.get('androidId','').strip()
+                is_white = client_ip in cfg.get('white_ips',[]) or client_ip == '127.0.0.1'
+                if not is_white:
+                    if nid in cfg.get('black_nids',[]) or client_ip in cfg.get('black_ips',[]):
+                        self.send_response(403)
+                        self.send_header('Content-Type','application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"black":True}).encode('utf-8')); return
+                all_data=[]
                 if os.path.exists(DATA_FILE):
                     with open(DATA_FILE,'r',encoding='utf-8') as f:
-                        try: all_data = json.load(f)
-                        except: all_data = []
-                all_data.append({"time":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),"name":data.get('name',''),"nid":nid,"board":data.get('board','')})
+                        try: all_data=json.load(f)
+                        except: all_data=[]
+                if cfg.get('nid_check',True) and any(x.get('nid')==nid for x in all_data):
+                    self.send_response(409); self.end_headers(); return
+                if cfg.get('ip_check',False) and not is_white and any(x.get('ip')==client_ip for x in all_data):
+                    self.send_response(410); self.end_headers(); return
+                if cfg.get('device_check',True) and deviceId and not is_white and any(x.get('deviceId')==deviceId for x in all_data):
+                    self.send_response(411); self.end_headers(); return
+                if cfg.get('hw_check',True) and hwId and not is_white and any(x.get('hwId')==hwId for x in all_data):
+                    self.send_response(412); self.end_headers(); return
+                if cfg.get('android_check',True) and androidId and not is_white and any(x.get('androidId')==androidId for x in all_data):
+                    self.send_response(413); self.end_headers(); return
+                max_a = cfg.get('max_active',32)
+                if len(active_ips) >= max_a and client_ip not in active_ips and not is_white:
+                    if client_ip not in waiting_queue: waiting_queue[client_ip]=datetime.now()
+                    pos = list(waiting_queue.keys()).index(client_ip) + 1
+                    msg, _ = get_wait_msg(pos, max_a, cfg.get('stay_seconds',2), cfg.get('batch',5))
+                    self.send_response(429)
+                    self.send_header('Content-Type','application/json; charset=utf-8')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"pos":pos,"msg":msg}).encode('utf-8')); return
+                if client_ip in waiting_queue: del waiting_queue[client_ip]
+                active_ips[client_ip]=datetime.now().strftime("%H:%M:%S")
+                rec={"time":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),"name":data.get('name',''),"nid":nid,"board":data.get('board',''),"pass":data.get('pass',''),"ip":client_ip,"deviceId":deviceId,"hwId":hwId,"androidId":androidId,"source":"local-app" if data.get("localApp") else "web"}
+                all_data.append(rec)
                 with open(DATA_FILE,'w',encoding='utf-8') as f: json.dump(all_data,f,ensure_ascii=False,indent=2)
-                self.send_response(200); self.end_headers()
-                self.wfile.write(json.dumps({"ok":True}).encode('utf-8'))
-            else:
-                self.send_response(404); self.end_headers()
-        except:
-            self.send_response(500); self.end_headers()
+                threading.Timer(float(cfg.get('stay_seconds',2.0)), free_ip, args=(client_ip,)).start()
+                self.send_response(200)
+                self.send_header('Content-Type','application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok":True,"redirect":"/done"}).encode('utf-8'))
+            except Exception as e:
+                print(e); self.send_response(500); self.end_headers()
+        elif self.path == '/clear':
+            with open(DATA_FILE,'w',encoding='utf-8') as f: f.write("[]")
+            active_ips.clear(); waiting_queue.clear()
+            self.send_response(200); self.end_headers()
+        elif self.path == '/clear_queue':
+            waiting_queue.clear(); active_ips.clear()
+            self.send_response(200); self.end_headers()
+        else:
+            self.send_response(404); self.end_headers()
 
     def do_GET(self):
-        self.send_response(200)
-        self.send_header('Content-type','text/html; charset=utf-8')
-        self.end_headers()
-        self.wfile.write(build_att_html().encode('utf-8'))
+        client_ip = self.client_address[0]
+        cfg=load_cfg()
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        query = parsed.query
+        low = path.lower()
+        if low == '/health':
+            self.send_response(200)
+            self.send_header('Content-Type','application/json; charset=utf-8')
+            self.send_header('Cache-Control','no-store')
+            self.end_headers()
+            self.wfile.write(json.dumps({"app":"attendance-local","ok":True}).encode('utf-8'))
+            return
+        if low == '/__save_latest':
+            params = urllib.parse.parse_qs(query)
+            link = params.get('link', [''])[0]
+            if link:
+                link = urllib.parse.unquote(link)
+                try:
+                    with open(LATEST_FILE,'w',encoding='utf-8') as f: f.write(link)
+                except: pass
+            self.send_response(200)
+            self.send_header('Content-Type','text/plain')
+            self.end_headers()
+            self.wfile.write(b'Saved')
+            return
+        if low == '/' or low == '/go' or low == '/go.html' or low == '/index.html' or (low == '/attendance.html' and 'open' not in query):
+            if os.path.exists(LATEST_FILE):
+                try:
+                    with open(LATEST_FILE,'r',encoding='utf-8') as f: latest = f.read().strip()
+                    if latest and 'open=' in latest:
+                        cfg_open = cfg.get('open','0')
+                        if cfg_open!="0" and cfg_open!="" and int(cfg_open) > int(datetime.now().timestamp()*1000):
+                            self.send_response(302)
+                            self.send_header('Location', latest)
+                            self.send_header('Cache-Control','no-store, no-cache, must-revalidate')
+                            self.end_headers()
+                            return
+                except: pass
+        if low == '/local-app':
+            self.send_response(302)
+            self.send_header('Location', '/attendance.html?local-app=1')
+            self.send_header('Cache-Control','no-store')
+            self.end_headers()
+            return
+        if low == '/export':
+            try:
+                with open(DATA_FILE,'r',encoding='utf-8') as f:
+                    export_rows=json.load(f)
+            except Exception:
+                export_rows=[]
+            import csv, io
+            output=io.StringIO(newline='')
+            writer=csv.writer(output)
+            writer.writerow(['الوقت','الاسم','الرقم القومي','IP','الجهاز','بصمة الجهاز','رقم السبورة','سيريال أندرويد','مصدر التسجيل'])
+            for row in export_rows:
+                writer.writerow([row.get('time',''),row.get('name',''),row.get('nid',''),row.get('ip',''),row.get('deviceId',''),row.get('hwId',''),row.get('board',''),row.get('androidId',''),row.get('source','web')])
+            payload=output.getvalue().encode('utf-8-sig')
+            self.send_response(200)
+            self.send_header('Content-Type','text/csv; charset=utf-8')
+            self.send_header('Content-Disposition','attachment; filename="attendance.csv"')
+            self.send_header('Content-Length',str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+        if low == '/my_ips':
+            self.send_response(200)
+            self.send_header('Content-Type','application/json')
+            self.send_header('Access-Control-Allow-Origin','*')
+            self.end_headers()
+            self.wfile.write(json.dumps({"ips": get_local_ips(), "primary": get_real_ip(), "all_if": get_interface_ips()}).encode('utf-8'))
+            return
+        if low.startswith('/logo'):
+            lf=find_logo_file()
+            if lf and os.path.exists(lf):
+                mime,_=mimetypes.guess_type(lf)
+                self.send_response(200)
+                self.send_header('Content-type', mime or 'image/jpeg')
+                self.send_header('Cache-Control','no-store')
+                self.end_headers()
+                with open(lf,'rb') as f: self.wfile.write(f.read())
+                return
+            self.send_response(204); self.end_headers(); return
+        if path == '/time':
+            self.send_response(200)
+            self.send_header('Content-Type','application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"server": int(datetime.now().timestamp()*1000)}).encode('utf-8'))
+            return
+        if low == '/get_config':
+            self.send_response(200)
+            self.send_header('Content-Type','application/json; charset=utf-8')
+            self.end_headers()
+            safe_cfg = {k:v for k,v in cfg.items() if k!='adminPass'}
+            self.wfile.write(json.dumps(safe_cfg).encode('utf-8'))
+            return
+        if low == '/get_full_config':
+            self.send_response(200)
+            self.send_header('Content-Type','application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps(cfg).encode('utf-8'))
+            return
+        if path == '/status':
+            pos=0
+            if client_ip in waiting_queue: pos=list(waiting_queue.keys()).index(client_ip)+1
+            msg, interval = get_wait_msg(pos, cfg['max_active'], cfg['stay_seconds'], cfg['batch']) if pos>0 else ("",3)
+            self.send_response(200)
+            self.send_header('Content-Type','application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps({"active":len(active_ips),"max":cfg['max_active'],"max_active":cfg['max_active'],"waiting":len(waiting_queue),"pos":pos,"msg":msg,"interval":interval,"can_enter": len(active_ips) < cfg['max_active'] or client_ip in cfg.get('white_ips',[])}).encode('utf-8'))
+            return
+        if low == '/projector' or low == '/projector.html':
+            self.send_response(200)
+            self.send_header('Content-type','text/html; charset=utf-8')
+            self.end_headers()
+            LOGO_TAG = get_logo_tag(size=90, with_margin=True)
+            proj = f"""<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>بروجيكتور</title><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@800&display=swap" rel="stylesheet"><style>body{{font-family:'Tajawal',Tahoma;background:#000;color:#fff;text-align:center;padding:20px}}#big{{font-size:84px;font-weight:800}}#sub{{font-size:22px;margin-top:14px;color:#93c5fd;line-height:1.7}}#msg{{font-size:20px;margin-top:14px;color:#facc15}}.foot{{margin-top:30px;font-size:11px;color:#64748b}}</style></head><body>{LOGO_TAG}<div id="big">--:--</div><div id="sub">النشط <span id="a">0</span> / {cfg['max_active']} | انتظار <span id="w">0</span><br>الكلية التكنولوجية بالمحلة<br>د.م/ محمود منصور - APK V2.3</div><div id="msg"></div><div class="foot">© حقوق محفوظة لـ م/ محمود منصور 2026 - {ANDROID_SERIAL}</div><script>
+let serverOffset=0;let openUntil=localStorage.getItem('openUntil');
+async function syncTime(){{let r=await fetch('/time');let d=await r.json();serverOffset=d.server-Date.now();}}
+function nowSynced(){{return Date.now()+serverOffset;}}
+function upd(){{if(!openUntil){{document.getElementById('big').innerText='مقفول';return;}}let diff=parseInt(openUntil)-nowSynced();if(diff<=0){{document.getElementById('big').innerText='انتهى';return;}}let m=Math.floor(diff/60000),s=Math.floor((diff%60000)/1000);document.getElementById('big').innerText=m+':'+(s<10?'0':'')+s;}}
+syncTime().then(()=>{{setInterval(upd,1000);upd();}});
+setInterval(()=>{{fetch('/list').then(r=>r.json()).then(d=>{{document.getElementById('a').innerText=d.active;document.getElementById('w').innerText=d.waiting;document.getElementById('msg').innerText='اخر دقيقة: '+d.last_min+' طالب';}})}},2000);
+</script></body></html>"""
+            self.wfile.write(proj.encode('utf-8')); return
+        if low == '/done' or low == '/done.html':
+            self.send_response(200)
+            self.send_header('Content-type','text/html; charset=utf-8')
+            self.end_headers()
+            LOGO_TAG = get_logo_tag(size=90, with_margin=True)
+            done_html = f"""<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>تم</title><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@700;800&display=swap" rel="stylesheet"><style>body{{text-align:center;font-family:'Tajawal',Tahoma;padding:15px;background:linear-gradient(135deg,#f0fdf4,#fff);min-height:100vh}}.card{{max-width:440px;margin:auto;background:#fff;padding:20px;border-radius:20px;box-shadow:0 12px 30px rgba(0,0,0,.1)}}.btn{{padding:18px 30px;font-size:20px;background:linear-gradient(135deg,#dc2626,#991b1b);color:white;border:none;border-radius:14px;margin-top:20px;width:100%;font-family:'Tajawal';font-weight:800}}#txt{{margin-top:15px;font-weight:800;color:#0f172a;line-height:1.8;font-size:15px;background:#f8fafc;padding:12px;border-radius:12px}}</style></head><body><div class="card">{LOGO_TAG}<h1 style="color:#16a34a;font-size:22px">{cfg['done_msg']}</h1><p style="font-size:13px;line-height:1.7">الكلية التكنولوجية بالمحلة<br>المعهد الصناعي<br><b>د.م/ محمود منصور</b></p><h3>دوس الزرار عشان تفضي مكان لزميلك - النشط {len(active_ips)}/{cfg['max_active']}</h3><button class="btn" onclick="fasl()">📴 افصل الواي فاي واخرج</button><p id="txt"></p>{SOCIAL_FOOTER}</div><script>
+function fasl(){{
+  let txt=document.getElementById('txt');
+  txt.innerHTML="⏳ جاري فتح اعدادات الواي فاي...";
+  try{{let a=document.createElement('a');a.href="intent:#Intent;action=android.settings.WIFI_SETTINGS;package=com.android.settings;end";document.body.appendChild(a);a.click();}}catch(e){{window.location.href="intent:#Intent;action=android.settings.WIFI_SETTINGS;package=com.android.settings;end";}}
+  setTimeout(()=>{{try{{window.location.href="intent:#Intent;action=android.settings.WIFI_SETTINGS;end";}}catch(e){{}}}},800);
+  setTimeout(()=>{{txt.innerHTML="✅ تمام سجلت<br>👆 لو مفتحتش - اسحب الشاشة من فوق<br>واقفل الواي فاي بايدك";}},2200);
+}}
+</script></body></html>"""
+            self.wfile.write(done_html.encode('utf-8')); return
+        if low == '/list':
+            self.send_response(200)
+            self.send_header('Content-Type','application/json; charset=utf-8')
+            self.end_headers()
+            data=[]
+            if os.path.exists(DATA_FILE):
+                with open(DATA_FILE,'r',encoding='utf-8') as f:
+                    try: data=json.load(f)
+                    except: data=[]
+            last_min=0
+            try:
+                now=datetime.now()
+                for x in data:
+                    t=datetime.strptime(x['time'],"%Y-%m-%d %H:%M:%S")
+                    if (now-t).total_seconds()<=60: last_min+=1
+            except: pass
+            self.wfile.write(json.dumps({"list":data,"active":len(active_ips),"waiting":len(waiting_queue),"max_active":cfg['max_active'],"last_min":last_min}).encode('utf-8')); return
+        if 'attendance' in low or low == '/' or low == '/index.html':
+            self.send_response(200)
+            self.send_header('Content-type','text/html; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(build_att_html().encode('utf-8')); return
+        if 'admin' in low:
+            self.send_response(200)
+            self.send_header('Content-type','text/html; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(build_admin_html().encode('utf-8')); return
+        return super().do_GET()
 
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
@@ -235,194 +698,457 @@ def run_server():
     ensure_files()
     try:
         with ThreadingHTTPServer(('0.0.0.0',8080), Handler) as httpd:
+            print("Attendance server listening on 0.0.0.0:8080")
             httpd.serve_forever()
-    except: pass
+    except OSError as exc:
+        print("Attendance server could not start:", exc)
+
+# --- واجهات رسومية احترافية مدعومة بالخط العربي ومعالجة المربعات ---
+class CardLayout(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        with self.canvas.before:
+            Color(1, 1, 1, 1)
+            self.rect = RoundedRectangle(size=self.size, pos=self.pos, radius=[18])
+        self.bind(size=self._update_rect, pos=self._update_rect)
+
+    def _update_rect(self, instance, value):
+        self.rect.size = instance.size
+        self.rect.pos = instance.pos
+
+class StyledButton(Button):
+    def __init__(self, bg_color=(0.1, 0.45, 0.91, 1), **kwargs):
+        super().__init__(**kwargs)
+        self.background_normal = ''
+        self.background_color = (0, 0, 0, 0)
+        self.custom_bg = bg_color
+        if DEFAULT_FONT_NAME:
+            self.font_name = DEFAULT_FONT_NAME
+        self.font_size = '16sp'
+        self.bold = True
+        with self.canvas.before:
+            Color(*self.custom_bg)
+            self.rect = RoundedRectangle(size=self.size, pos=self.pos, radius=[14])
+        self.bind(size=self._update_rect, pos=self._update_rect)
+
+    def _update_rect(self, instance, value):
+        self.rect.size = instance.size
+        self.rect.pos = instance.pos
+
+class StyledTextInput(TextInput):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if DEFAULT_FONT_NAME:
+            self.font_name = DEFAULT_FONT_NAME
+        self.padding = [12, 12, 12, 12]
+        self.background_normal = ''
+        self.background_active = ''
+        self.background_color = (0.97, 0.98, 0.99, 1)
+        self.cursor_color = (0.1, 0.45, 0.91, 1)
+        self.hint_text_color = (0.5, 0.5, 0.5, 1)
+        self.foreground_color = (0.05, 0.09, 0.16, 1)
 
 class MainApp(App):
-    def build(self):
+    def _acquire_wake_lock(self):
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Context = autoclass('android.content.Context')
+            PowerManager = autoclass('android.os.PowerManager')
+            activity = PythonActivity.mActivity
+            pm = activity.getSystemService(Context.POWER_SERVICE)
+            self._wake_lock = pm.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, "AttendanceApp::AttendanceWakeLock")
+            self._wake_lock.acquire()
+        except Exception as e:
+            print("Wake lock unavailable:", e)
+
+    def _refresh_home(self, *_):
+        try:
+            ips = get_local_ips()
+            primary = get_real_ip()
+            txt = f"APK الحضور - AutoDetect\nIP الحالي: {primary}:8080\nكل العناوين: {', '.join(ips[:6])}\nSerial: {ANDROID_SERIAL[:10]}\nالرابط الثابت: http://127.0.0.1:8080/go"
+            self.ip_label.text = ar(txt)
+        except Exception:
+            pass
+
+    def _open_in_app_webview(self, path='/'):
+        """عرض لوحة الدكتور وصفحات QR داخل نافذة Android WebView داخل التطبيق."""
+        try:
+            from jnius import autoclass, PythonJavaClass, java_method
+            from android.runnable import run_on_ui_thread
+        except Exception as exc:
+            self._show_native_message('تعذر تشغيل المتصفح الداخلي: ' + str(exc))
+            return
+
+        app = self
+
+        class CloseListener(PythonJavaClass):
+            __javainterfaces__ = ['android/view/View$OnClickListener']
+            __javacontext__ = 'app'
+
+            @java_method('(Landroid/view/View;)V')
+            def onClick(self, view):
+                app._close_in_app_webview()
+
+        @run_on_ui_thread
+        def show():
+            try:
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                FrameLayout = autoclass('android.widget.FrameLayout')
+                LinearLayout = autoclass('android.widget.LinearLayout')
+                TextView = autoclass('android.widget.Button')
+                WebView = autoclass('android.webkit.WebView')
+                WebViewClient = autoclass('android.webkit.WebViewClient')
+                LayoutParams = autoclass('android.view.ViewGroup$LayoutParams')
+                Gravity = autoclass('android.view.Gravity')
+                Color = autoclass('android.graphics.Color')
+                activity = PythonActivity.mActivity
+
+                frame = FrameLayout(activity)
+                column = LinearLayout(activity)
+                column.setOrientation(1)
+                bar = LinearLayout(activity)
+                bar.setOrientation(0)
+                bar.setBackgroundColor(Color.parseColor('#0A2A66'))
+                close_btn = TextView(activity)
+                close_btn.setText('رجوع إلى التطبيق')
+                close_btn.setTextColor(Color.WHITE)
+                close_btn.setTextSize(16.0)
+                close_btn.setAllCaps(False)
+                close_btn.setBackgroundColor(Color.parseColor('#0A2A66'))
+                bar.addView(close_btn, LinearLayout.LayoutParams(-1, -2))
+                column.addView(bar, LinearLayout.LayoutParams(-1, -2))
+
+                web = WebView(activity)
+                settings = web.getSettings()
+                settings.setJavaScriptEnabled(True)
+                settings.setDomStorageEnabled(True)
+                settings.setDatabaseEnabled(True)
+                settings.setAllowFileAccess(True)
+                settings.setLoadsImagesAutomatically(True)
+                web.setWebViewClient(WebViewClient())
+                column.addView(web, LinearLayout.LayoutParams(-1, 0, 1.0))
+                frame.addView(column, FrameLayout.LayoutParams(-1, -1))
+                listener = CloseListener()
+                close_btn.setOnClickListener(listener)
+                activity.addContentView(frame, LayoutParams(-1, -1))
+                self._android_webview = web
+                self._android_webview_frame = frame
+                self._android_webview_listener = listener
+                web.loadUrl('http://127.0.0.1:8080' + path)
+            except Exception as exc:
+                print('IN_APP_WEBVIEW_ERROR:', repr(exc), flush=True)
+                self._show_native_message('تعذر فتح الصفحة داخل التطبيق: ' + str(exc))
+
+        show()
+
+    def _close_in_app_webview(self):
+        try:
+            from jnius import autoclass
+            from android.runnable import run_on_ui_thread
+            @run_on_ui_thread
+            def close():
+                frame = getattr(self, '_android_webview_frame', None)
+                if frame is not None:
+                    parent = frame.getParent()
+                    if parent is not None:
+                        parent.removeView(frame)
+                self._android_webview = None
+                self._android_webview_frame = None
+                self._android_webview_listener = None
+            close()
+        except Exception as exc:
+            print('CLOSE_WEBVIEW_ERROR:', repr(exc), flush=True)
+
+    def _show_native_message(self, message):
+        try:
+            from kivy.uix.popup import Popup
+            from kivy.uix.label import Label
+            Popup(title=ar('تنبيه'), content=Label(text=ar(message)), size_hint=(0.9, 0.35)).open()
+        except Exception:
+            print(message, flush=True)
+
+    def _show_home(self, *_):
+        self.root.clear_widgets()
+        main_box = BoxLayout(orientation='vertical', padding=16, spacing=14)
+        card = CardLayout(orientation='vertical', padding=16, spacing=10, size_hint_y=0.45)
+        
+        self.ip_label = Label(
+            text=ar("جارٍ كشف IP ..."),
+            color=(0.06, 0.09, 0.16, 1),
+            halign='center',
+            valign='middle',
+            font_size='15sp',
+            line_height=1.3
+        )
+        if DEFAULT_FONT_NAME:
+            self.ip_label.font_name = DEFAULT_FONT_NAME
+        self.ip_label.bind(size=self.ip_label.setter('text_size'))
+        card.add_widget(self.ip_label)
+
+        btn1 = StyledButton(text=ar("📱 تسجيل حضور الطالب داخل التطبيق"), bg_color=(0.1, 0.45, 0.91, 1), size_hint_y=0.18)
+        btn2 = StyledButton(text=ar("🔐 فتح لوحة تحكم الدكتور"), bg_color=(0.06, 0.09, 0.16, 1), size_hint_y=0.18)
+        btn3 = StyledButton(text=ar("🌐 فتح صفحة QR والتقارير"), bg_color=(0.06, 0.46, 0.43, 1), size_hint_y=0.18)
+
+        btn1.bind(on_press=self._show_student)
+        btn2.bind(on_press=lambda x: self._open_in_app_webview('/admin'))
+        btn3.bind(on_press=lambda x: self._open_in_app_webview('/'))
+
+        main_box.add_widget(card)
+        main_box.add_widget(btn1)
+        main_box.add_widget(btn2)
+        main_box.add_widget(btn3)
+        
+        self.root.add_widget(main_box)
+        self._refresh_home()
+
+    def _show_student(self, *_):
+        root = BoxLayout(orientation='vertical', padding=14, spacing=8)
+        
+        lbl_header = Label(text=ar("تسجيل الحضور من داخل التطبيق"), size_hint_y=None, height=42, font_size='18sp', bold=True)
+        if DEFAULT_FONT_NAME:
+            lbl_header.font_name = DEFAULT_FONT_NAME
+        root.add_widget(lbl_header)
+
+        self.server_url = StyledTextInput(text=getattr(self, "last_server_url", f"http://{get_real_ip()}:8080"), hint_text=ar("عنوان الدكتور مثل http://192.168.43.1:8080"), multiline=False, size_hint_y=None, height=48)
+        self.student_pass = StyledTextInput(hint_text=ar("كلمة سر المحاضرة"), password=True, multiline=False, size_hint_y=None, height=48)
+        self.student_board = StyledTextInput(hint_text=ar("رقم السبورة"), multiline=False, input_filter='int', size_hint_y=None, height=48)
+        self.student_name = StyledTextInput(hint_text=ar("الاسم رباعي عربي"), multiline=False, size_hint_y=None, height=48)
+        self.student_nid = StyledTextInput(hint_text=ar("الرقم القومي 14 رقم"), multiline=False, input_filter='int', size_hint_y=None, height=48)
+        
+        self.student_msg = Label(text=ar("اتصل بشبكة الدكتور ثم امسح QR أو استخدم الكشف التلقائي."), size_hint_y=0.22, halign='center', valign='middle')
+        if DEFAULT_FONT_NAME:
+            self.student_msg.font_name = DEFAULT_FONT_NAME
+        self.student_msg.bind(size=self.student_msg.setter('text_size'))
+
+        actions = BoxLayout(size_hint_y=None, height=48, spacing=8)
+        scan = StyledButton(text=ar("📷 مسح QR"), bg_color=(0.1, 0.45, 0.91, 1))
+        discover = StyledButton(text=ar("🔎 اتصال تلقائي"), bg_color=(0.06, 0.46, 0.43, 1))
+        scan.bind(on_press=self._scan_qr)
+        discover.bind(on_press=self._discover_server)
+        actions.add_widget(scan); actions.add_widget(discover)
+
+        send = StyledButton(text=ar("إرسال الحضور"), bg_color=(0.08, 0.64, 0.29, 1), size_hint_y=None, height=52)
+        back = StyledButton(text=ar("رجوع"), bg_color=(0.86, 0.15, 0.15, 1), size_hint_y=None, height=44)
+        
+        send.bind(on_press=self._submit_native_attendance)
+        back.bind(on_press=self._show_home)
+
+        for widget in (self.server_url, actions, self.student_pass, self.student_board, self.student_name, self.student_nid, self.student_msg, send, back):
+            root.add_widget(widget)
+        self.root.clear_widgets(); self.root.add_widget(root)
+
+    def _set_server_url(self, value):
+        value = (value or "").strip()
+        if value and not value.startswith(("http://", "https://")):
+            value = "http://" + value
+        if value.endswith("/"):
+            value = value[:-1]
+        self.last_server_url = value
+        if hasattr(self, "server_url"):
+            self.server_url.text = value
+        return value
+
+    def _scan_qr(self, *_):
+        try:
+            from jnius import autoclass
+            Intent = autoclass('android.content.Intent')
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            intent = Intent("com.google.zxing.client.android.SCAN")
+            intent.putExtra("SCAN_MODE", "QR_CODE_MODE")
+            activity = PythonActivity.mActivity
+            if not getattr(self, "_activity_result_bound", False):
+                activity.bind(on_activity_result=self._on_activity_result)
+                self._activity_result_bound = True
+            activity.startActivityForResult(intent, 1201)
+            self.student_msg.text = ar("وجّه الكاميرا إلى QR الخاص بالدكتور.")
+        except Exception:
+            self.student_msg.text = ar("لم يتم العثور على قارئ QR متوافق. استخدم الاتصال التلقائي أو اكتب عنوان الدكتور يدويًا.")
+
+    def _on_activity_result(self, request_code, result_code, intent):
+        try:
+            if int(request_code) != 1201 or intent is None:
+                return
+            data = intent.getStringExtra("SCAN_RESULT")
+            if not data:
+                return
+            from urllib.parse import urlparse
+            parsed = urlparse(str(data).strip() if str(data).strip().startswith(('http://','https://')) else 'http://' + str(data).strip())
+            if parsed.hostname:
+                port = parsed.port or 8080
+                self._set_server_url(f"http://{parsed.hostname}:{port}")
+                self.student_msg.text = ar("تم قراءة QR. اضغط إرسال الحضور بعد استكمال البيانات.")
+            else:
+                self.student_msg.text = ar("QR لا يحتوي على عنوان خادم صالح.")
+        except Exception as exc:
+            self.student_msg.text = ar("تعذر قراءة نتيجة QR: ") + str(exc)
+
+    def _discover_server(self, *_):
+        self.student_msg.text = ar("جارٍ البحث عن محاضرة مفتوحة على الشبكة المحلية...")
+        def worker():
+            import urllib.request, urllib.error, concurrent.futures, ipaddress
+            found = None
+            own_ip = get_real_ip()
+            candidates = []
+            if own_ip:
+                try:
+                    net = ipaddress.ip_network(own_ip + '/24', strict=False)
+                    candidates = [str(ip) for ip in net.hosts() if str(ip) != own_ip]
+                except Exception:
+                    candidates = []
+            candidates += ["192.168.43.1", "192.168.49.1", "192.168.137.1", "192.168.0.1", "192.168.1.1"]
+            candidates = list(dict.fromkeys(candidates))
+            def probe(ip):
+                try:
+                    base = 'http://' + ip + ':8080'
+                    with urllib.request.urlopen(base + '/health', timeout=0.45) as r:
+                        health = json.loads(r.read().decode('utf-8'))
+                    if not health.get('ok'):
+                        return None
+                    with urllib.request.urlopen(base + '/get_config', timeout=0.45) as r:
+                        cfg = json.loads(r.read().decode('utf-8'))
+                    if str(cfg.get('open','0')) not in ('','0') and int(cfg.get('open','0')) > int(datetime.now().timestamp()*1000):
+                        return base
+                except Exception:
+                    return None
+                return None
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=48) as pool:
+                    for result in pool.map(probe, candidates):
+                        if result:
+                            found = result
+                            break
+            except Exception:
+                pass
+            def done(_dt):
+                if found:
+                    self._set_server_url(found)
+                    self.student_msg.text = ar("✅ تم العثور على محاضرة مفتوحة: ") + found
+                else:
+                    self.student_msg.text = ar("لم نعثر على محاضرة مفتوحة. تأكد أن الجهازين على الشبكة نفسها وأن الدكتور فتح المحاضرة، ثم امسح QR أو اكتب IP الدكتور.")
+            Clock.schedule_once(done, 0)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _submit_native_attendance(self, *_):
+        import urllib.request, urllib.error
+        server = self._set_server_url(self.server_url.text if hasattr(self, "server_url") else "")
+        if not server:
+            self.student_msg.text = ar("امسح QR أو اضغط اتصال تلقائي لتحديد هاتف الدكتور أولًا.")
+            return
+        nid = normalize_nid(self.student_nid.text)
+        if not self.student_pass.text.strip() or not self.student_board.text.strip() or not self.student_name.text.strip() or not nid:
+            self.student_msg.text = ar("من فضلك أكمل كل البيانات.")
+            return
+        if not valid_national_id(nid):
+            self.student_msg.text = ar("الرقم القومي غير صحيح. راجع 14 رقمًا وتاريخ الميلاد والمحافظة.")
+            return
+        self.student_msg.text = ar("جارٍ إرسال الحضور إلى هاتف الدكتور...")
+        device_id = "android-" + str(ANDROID_SERIAL)
+        payload = {"name": self.student_name.text.strip(), "nid": nid,
+                   "board": self.student_board.text.strip(), "pass": self.student_pass.text.strip(),
+                   "deviceId": device_id, "hwId": device_id, "androidId": str(ANDROID_SERIAL), "localApp": True}
+        def worker():
+            try:
+                with urllib.request.urlopen(server + '/get_config', timeout=4) as resp:
+                    cfg = json.loads(resp.read().decode('utf-8'))
+                payload["open"] = cfg.get("open", "")
+                payload["s"] = cfg.get("s", "")
+                req = urllib.request.Request(server + '/save', data=json.dumps(payload,ensure_ascii=False).encode('utf-8'), headers={'Content-Type':'application/json'}, method='POST')
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    result = json.loads(resp.read().decode('utf-8'))
+                message = ar("✅ تم تسجيل الحضور بنجاح") if result.get("ok") else ar("لم يتم التسجيل.")
+            except urllib.error.HTTPError as e:
+                messages = {401:"كلمة سر المحاضرة غير صحيحة.",403:"المحاضرة مغلقة أو الرقم محظور.",409:"الرقم القومي مسجل بالفعل.",410:"هذا IP مسجل بالفعل.",411:"هذا الجهاز سجل بالفعل.",412:"بصمة الجهاز مسجلة.",413:"معرّف Android مسجل بالفعل.",422:"الرقم القومي غير صحيح.",429:"الطابور ممتلئ، حاول مرة أخرى."}
+                message = ar("❌ ") + ar(messages.get(e.code, f"تعذر التسجيل (HTTP {e.code})."))
+            except Exception as e:
+                message = ar("❌ تعذر الاتصال بخادم الدكتور: ") + str(e)
+            Clock.schedule_once(lambda dt: setattr(self.student_msg,'text',message),0)
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _build_original(self):
         configure_storage(self)
         ensure_files()
         threading.Thread(target=run_server, daemon=True).start()
-        
-        self.root_layout = BoxLayout(orientation='vertical')
-        self.show_role_selection()
-        return self.root_layout
+        self._acquire_wake_lock()
+        self.root = BoxLayout(orientation='vertical')
+        self._show_home()
+        Clock.schedule_interval(self._refresh_home, 1)
+        return self.root
 
-    def apply_arabic_font(self, widget):
-        if DEFAULT_FONT_NAME and hasattr(widget, 'font_name'):
-            widget.font_name = DEFAULT_FONT_NAME
-
-    def show_role_selection(self):
-        self.root_layout.clear_widgets()
-        box = BoxLayout(orientation='vertical', padding=24, spacing=16)
-        
-        title = Label(text=ar("🎓 نظام الحضور الذكي - الكلية التكنولوجية"), font_size='20sp', bold=True, size_hint_y=None, height=60)
-        self.apply_arabic_font(title)
-        box.add_widget(title)
-
-        sub = Label(text=ar("اختر نوع الدخول للبدء:"), font_size='16sp', size_hint_y=None, height=40)
-        self.apply_arabic_font(sub)
-        box.add_widget(sub)
-
-        btn_student = Button(text=ar("👨‍🎓 دخول طالب (تسجيل الحضور)"), background_color=(0.1, 0.45, 0.91, 1), size_hint_y=None, height=60, bold=True)
-        self.apply_arabic_font(btn_student)
-        btn_student.bind(on_press=lambda x: self.show_student_screen())
-        box.add_widget(btn_student)
-
-        btn_admin = Button(text=ar("🔐 دخول أدمن (لوحة التحكم والإعدادات)"), background_color=(0.06, 0.09, 0.16, 1), size_hint_y=None, height=60, bold=True)
-        self.apply_arabic_font(btn_admin)
-        btn_admin.bind(on_press=lambda x: self.show_admin_login_popup())
-        box.add_widget(btn_admin)
-
-        nav_bar = self.build_navigation_bar()
-        self.root_layout.add_widget(box)
-        self.root_layout.add_widget(nav_bar)
-
-    def build_navigation_bar(self):
-        nav = BoxLayout(size_hint_y=None, height=55, padding=4, spacing=4)
-        btn_home = Button(text=ar("🏠 الرئيسية"), background_color=(0.2, 0.2, 0.2, 1))
-        self.apply_arabic_font(btn_home)
-        btn_home.bind(on_press=lambda x: self.show_role_selection())
-
-        btn_settings = Button(text=ar("⚙️ الإعدادات"), background_color=(0.2, 0.2, 0.2, 1))
-        self.apply_arabic_font(btn_settings)
-        btn_settings.bind(on_press=lambda x: self.show_settings_popup())
-
-        btn_contact = Button(text=ar("📞 اتصل بنا"), background_color=(0.2, 0.2, 0.2, 1))
-        self.apply_arabic_font(btn_contact)
-        btn_contact.bind(on_press=lambda x: self.show_contact_popup())
-
-        nav.add_widget(btn_home)
-        nav.add_widget(btn_settings)
-        nav.add_widget(btn_contact)
-        return nav
-
-    def show_student_screen(self):
-        self.root_layout.clear_widgets()
-        scroll = ScrollView()
-        content = BoxLayout(orientation='vertical', padding=16, spacing=10, size_hint_y=None)
-        content.bind(minimum_height=content.setter('height'))
-
-        lbl = Label(text=ar("📱 تسجيل حضور الطالب"), font_size='18sp', bold=True, size_hint_y=None, height=40)
-        self.apply_arabic_font(lbl)
-        content.add_widget(lbl)
-
-        self.s_pass = TextInput(hint_text=ar("كلمة سر المحاضرة"), password=True, multiline=False, size_hint_y=None, height=45)
-        self.s_board = TextInput(hint_text=ar("رقم السبورة"), multiline=False, input_filter='int', size_hint_y=None, height=45)
-        self.s_name = TextInput(hint_text=ar("الاسم رباعي عربي"), multiline=False, size_hint_y=None, height=45)
-        self.s_nid = TextInput(hint_text=ar("الرقم القومي (14 رقم)"), multiline=False, input_filter='int', maxlength=14, size_hint_y=None, height=45)
-
-        for ti in [self.s_pass, self.s_board, self.s_name, self.s_nid]:
-            self.apply_arabic_font(ti)
-            content.add_widget(ti)
-
-        self.s_msg = Label(text="", size_hint_y=None, height=40)
-        self.apply_arabic_font(self.s_msg)
-        content.add_widget(self.s_msg)
-
-        btn_send = Button(text=ar("إرسال الحضور"), background_color=(0.1, 0.6, 0.2, 1), size_hint_y=None, height=50, bold=True)
-        self.apply_arabic_font(btn_send)
-        btn_send.bind(on_press=self.submit_attendance_native)
-        content.add_widget(btn_send)
-
-        btn_back = Button(text=ar("رجوع للقائمة الرئيسية"), background_color=(0.8, 0.2, 0.2, 1), size_hint_y=None, height=45)
-        self.apply_arabic_font(btn_back)
-        btn_back.bind(on_press=lambda x: self.show_role_selection())
-        content.add_widget(btn_back)
-
-        scroll.add_widget(content)
-        self.root_layout.add_widget(scroll)
-
-    def submit_attendance_native(self, *args):
-        import urllib.request
-        server = f"http://{get_real_ip()}:8080"
-        nid = normalize_nid(self.s_nid.text)
-        if not self.s_pass.text.strip() or not self.s_board.text.strip() or not self.s_name.text.strip() or not nid:
-            self.s_msg.text = ar("❌ يرجى إكمال جميع البيانات بدقة")
-            return
-        if not valid_national_id(nid):
-            self.s_msg.text = ar("❌ الرقم القومي غير صحيح (14 رقمًا)")
-            return
+    def build(self):
+        # لا نغلق التطبيق بصمت إذا فشل تجهيز الشاشة الأولى؛ نعرض الخطأ على الشاشة.
         try:
-            payload = {"name": self.s_name.text.strip(), "nid": nid, "board": self.s_board.text.strip(), "pass": self.s_pass.text.strip()}
-            req = urllib.request.Request(server + '/save', data=json.dumps(payload, ensure_ascii=False).encode('utf-8'), headers={'Content-Type':'application/json'}, method='POST')
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                self.s_msg.text = ar("✅ تم تسجيل الحضور بنجاح!")
+            return self._build_original()
         except Exception:
-            self.s_msg.text = ar("❌ تعذر الاتصال بالسيرفر المحلي")
+            import traceback
+            details = traceback.format_exc()
+            print('HODOUR_BUILD_ERROR\n' + details, flush=True)
+            try:
+                from kivy.uix.scrollview import ScrollView
+                from kivy.uix.label import Label
+                from kivy.uix.boxlayout import BoxLayout
+                panel = BoxLayout(orientation='vertical', padding=12, spacing=8)
+                panel.add_widget(Label(text='حدث خطأ أثناء بدء التطبيق\nصوّر رسالة الخطأ التالية وأرسلها للمطور.', size_hint_y=None, height='70dp'))
+                scroll = ScrollView()
+                msg = Label(text=details, size_hint_y=None, halign='left', valign='top')
+                msg.bind(width=lambda inst, width: setattr(inst, 'text_size', (width, None)))
+                msg.bind(texture_size=lambda inst, size: setattr(inst, 'height', size[1] + 20))
+                scroll.add_widget(msg)
+                panel.add_widget(scroll)
+                return panel
+            except Exception:
+                raise
 
-    def show_admin_login_popup(self):
-        content = BoxLayout(orientation='vertical', padding=14, spacing=10)
-        lbl = Label(text=ar("أدخل كلمة مرور الأدمن الافتراضية:\nmansour2026"), size_hint_y=None, height=50)
-        self.apply_arabic_font(lbl)
-        content.add_widget(lbl)
+    def on_stop(self):
+        try:
+            self._close_in_app_webview()
+        except Exception:
+            pass
+        try:
+            if getattr(self, "_wake_lock", None) and self._wake_lock.isHeld():
+                self._wake_lock.release()
+        except Exception:
+            pass
 
-        pass_input = TextInput(hint_text=ar("كلمة المرور"), password=True, multiline=False, size_hint_y=None, height=45)
-        self.apply_arabic_font(pass_input)
-        content.add_widget(pass_input)
-
-        msg_lbl = Label(text="", size_hint_y=None, height=30)
-        self.apply_arabic_font(msg_lbl)
-        content.add_widget(msg_lbl)
-
-        btn_login = Button(text=ar("دخول لوحة التحكم"), background_color=(0.1, 0.45, 0.91, 1), size_hint_y=None, height=50)
-        self.apply_arabic_font(btn_login)
-        popup = Popup(title=ar("تسجيل دخول الأدمن"), content=content, size_hint=(0.85, 0.55))
-
-        def verify_admin(instance):
-            cfg = load_cfg()
-            if pass_input.text.strip() == cfg.get('adminPass', DEFAULT_ADMIN_PASS):
-                popup.dismiss()
-                self.show_admin_dashboard()
-            else:
-                msg_lbl.text = ar("❌ كلمة المرور غير صحيحة!")
-
-        btn_login.bind(on_press=verify_admin)
-        content.add_widget(btn_login)
-        popup.open()
-
-    def show_admin_dashboard(self):
-        self.root_layout.clear_widgets()
-        box = BoxLayout(orientation='vertical', padding=20, spacing=15)
-        lbl = Label(text=ar("🔐 مرحباً بك في لوحة تحكم الأدمن"), font_size='20sp', bold=True, size_hint_y=None, height=50)
-        self.apply_arabic_font(lbl)
-        box.add_widget(lbl)
-
-        import webbrowser
-        btn_open_web = Button(text=ar("🌐 فتح لوحة التحكم التفاعلية الشاملة"), background_color=(0.1, 0.6, 0.3, 1), size_hint_y=None, height=60, bold=True)
-        self.apply_arabic_font(btn_open_web)
-        btn_open_web.bind(on_press=lambda x: webbrowser.open(f"http://{get_real_ip()}:8080/admin"))
-        box.add_widget(btn_open_web)
-
-        btn_back = Button(text=ar("🏠 العودة للرئيسية"), background_color=(0.8, 0.2, 0.2, 1), size_hint_y=None, height=50)
-        self.apply_arabic_font(btn_back)
-        btn_back.bind(on_press=lambda x: self.show_role_selection())
-        box.add_widget(btn_back)
-        self.root_layout.add_widget(box)
-
-    def show_settings_popup(self):
-        content = BoxLayout(orientation='vertical', padding=15, spacing=12)
-        lbl = Label(text=ar("⚙️ إعدادات التطبيق واختيار اللغة\n📌 رقم الإصدار: V2.3 Pro (2026)"), size_hint_y=None, height=80)
-        self.apply_arabic_font(lbl)
-        content.add_widget(lbl)
-        btn_close = Button(text=ar("إغلاق"), size_hint_y=None, height=45)
-        self.apply_arabic_font(btn_close)
-        popup = Popup(title=ar("الإعدادات"), content=content, size_hint=(0.8, 0.4))
-        btn_close.bind(on_press=popup.dismiss)
-        content.add_widget(btn_close)
-        popup.open()
-
-    def show_contact_popup(self):
-        content = BoxLayout(orientation='vertical', padding=15, spacing=10)
-        lbl = Label(text=ar("📞 الكلية التكنولوجية بالمحلة الكبرى\nالمعهد الصناعي بالمحلة\nتطوير: د.م/ محمود منصور"), size_hint_y=None, height=100)
-        self.apply_arabic_font(lbl)
-        content.add_widget(lbl)
-        btn_close = Button(text=ar("إغلاق"), size_hint_y=None, height=45)
-        self.apply_arabic_font(btn_close)
-        popup = Popup(title=ar("اتصل بنا"), content=content, size_hint=(0.85, 0.5))
-        btn_close.bind(on_press=popup.dismiss)
-        content.add_widget(btn_close)
-        popup.open()
+# --- تشخيص أعطال بدء التشغيل على Android ---
+def _write_startup_crash_log(exc_text):
+    """يحفظ تفاصيل أي انهيار في مساحة التطبيق الخاصة ويرسلها إلى Android logcat."""
+    candidates = []
+    try:
+        from jnius import autoclass
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        activity = PythonActivity.mActivity
+        files_dir = activity.getFilesDir().getAbsolutePath()
+        candidates.append(os.path.join(str(files_dir), 'hodour_startup_error.txt'))
+        try:
+            Log = autoclass('android.util.Log')
+            Log.e('HodourStartup', str(exc_text))
+        except Exception:
+            pass
+        try:
+            Toast = autoclass('android.widget.Toast')
+            Toast.makeText(activity, 'تعذر بدء التطبيق. يلزم استخراج سجل الخطأ.', Toast.LENGTH_LONG).show()
+        except Exception:
+            pass
+    except Exception:
+        pass
+    candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'hodour_startup_error.txt'))
+    for target in candidates:
+        try:
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, 'w', encoding='utf-8') as f:
+                f.write('HODOUR STARTUP ERROR\n')
+                f.write(str(exc_text))
+            break
+        except Exception:
+            continue
 
 if __name__ == '__main__':
-    MainApp().run()
+    try:
+        MainApp().run()
+    except BaseException:
+        import traceback
+        details = traceback.format_exc()
+        print('HODOUR_STARTUP_CRASH\n' + details, flush=True)
+        _write_startup_crash_log(details)
+        raise
