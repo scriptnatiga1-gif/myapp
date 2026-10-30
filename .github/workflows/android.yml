@@ -1,3 +1,4 @@
+
 name: Build Android APK
 
 on:
@@ -50,9 +51,8 @@ jobs:
         run: |
           set -euo pipefail
           test -f main.py
-          test -f app_main.py
           test -f buildozer.spec
-          python -m py_compile main.py app_main.py
+          python -m py_compile main.py
           grep -n '^p4a.branch = v2024.01.21$' buildozer.spec
 
       - name: Install Buildozer
@@ -77,6 +77,7 @@ jobs:
           fi
 
           mkdir -p "$SDK_DIR/tools/bin" "$SDK_DIR/cmdline-tools/latest" "$SDK_DIR/licenses"
+
           # Buildozer 1.5.0 looks for the old tools/bin/sdkmanager path.
           # This wrapper redirects it to the modern command-line tools and SDK root.
           cat > "$SDK_DIR/tools/bin/sdkmanager" <<EOF
