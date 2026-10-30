@@ -1,24 +1,19 @@
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.floatlayout import FloatLayout
-from kivy.uix.gridlayout import GridLayout
-from kivy.uix.screenmanager import ScreenManager, Screen, FadeTransition
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
 from kivy.uix.popup import Popup
-from kivy.uix.switch import Switch
 from kivy.uix.scrollview import ScrollView
-from kivy.animation import Animation
-from kivy.graphics import Color, RoundedRectangle, Rectangle
+from kivy.graphics import Color, RoundedRectangle
 from kivy.core.text import LabelBase
 import http.server, json, os, threading, base64, socket, re, subprocess
 from datetime import datetime
 from collections import OrderedDict
 import urllib.parse, mimetypes, socketserver
 
-# --- دعم اللغة العربية وشكل النصوص بدون تقطيع أو عكس ---
+# --- دعم اللغة العربية وشكل النصوص ---
 try:
     import arabic_reshaper
     from bidi.algorithm import get_display
@@ -27,7 +22,6 @@ except ImportError:
     HAS_ARABIC_SUPPORT = False
 
 def ar(text):
-    """إعادة تشكيل وعرض النص العربي بصورة صحيحة ومتصلة في Kivy"""
     if not text:
         return ""
     if HAS_ARABIC_SUPPORT:
@@ -38,7 +32,6 @@ def ar(text):
             return str(text)
     return str(text)
 
-# البحث عن خط يدعم اللغة العربية لتجنب المربعات
 SYSTEM_ARABIC_FONT = None
 FONT_CANDIDATES = [
     "Amiri-Regular.ttf",
@@ -111,7 +104,6 @@ active_ips = OrderedDict()
 waiting_queue = OrderedDict()
 
 def get_real_ip():
-    """الدالة المتطورة لجلب الـ IP الحقيقي للشبكة سواء روتر أو هوت سبوت"""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -200,13 +192,6 @@ def free_ip(ip):
     if ip in active_ips: del active_ips[ip]
     if ip in waiting_queue: del waiting_queue[ip]
 
-def get_wait_msg(pos, max_a, stay, batch):
-    est_sec = (pos / batch) * stay + 5
-    m = int(est_sec // 60); s = int(est_sec % 60)
-    time_str = f"{m} دقيقة {s} ثانية" if m>0 else f"{s} ثانية"
-    if pos <= 10: return f"⏳ فاضل قدامك {pos} بس - خليك فاتح الصفحة هتدخل لوحدك كمان {time_str}", 3
-    else: return f"🧘‍♂️ دورك رقم {pos} - السيستم بيدخل {batch} كل {stay} ثانية", 5
-
 def find_logo_file():
     for n in ["logo.jpg","logo.jpeg","logo.png","logo.webp","logo.JPG","logo.PNG","LOGO.jpg","LOGO.png","logo.jfif","institute.jpg"]:
         p = os.path.join(BASE_DIR, n)
@@ -255,30 +240,31 @@ def build_att_html():
     LOGO_TAG = get_logo_tag(size=90, with_margin=True)
     real_ip = get_real_ip()
     return f"""<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>تسجيل الحضور</title><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet"><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script><style>*{{box-sizing:border-box}}body{{margin:0;font-family:'Tajawal',Tahoma;background:linear-gradient(135deg,#dbeafe,#f0f9ff,#ffffff);min-height:100vh;padding:12px;display:flex;flex-direction:column}}.card{{max-width:440px;margin:auto;background:#fff;padding:22px;border-radius:22px;box-shadow:0 12px 40px rgba(15,23,42,.12);border:1px solid #e2e8f0;width:100%}}.header-lines{{text-align:center;line-height:1.7;margin:8px 0 14px 0}}.t1{{font-size:20px;font-weight:800;color:#0f172a}}.t2{{font-size:13px;color:#334155}}.t3{{font-size:13px;color:#334155}}.t4{{font-size:14px;font-weight:800;color:#1a73e8}}input{{width:100%;padding:13px 14px;margin:7px 0;border:1px solid #cbd5e1;border-radius:14px;font-size:15px;font-family:'Tajawal';background:#f8fafc;outline:none}} input.bad{{border-color:#dc2626;background:#fef2f2}}button{{width:100%;padding:14px;background:linear-gradient(135deg,#1a73e8,#0d47a1);color:#fff;border:none;border-radius:14px;font-size:17px;font-weight:800;font-family:'Tajawal';cursor:pointer}}button:disabled{{opacity:.4;cursor:not-allowed;background:#94a3b8!important}}.msgbox{{display:none;padding:13px;border-radius:12px;margin-top:12px;font-weight:800;font-size:15px;text-align:center}}#msgBox{{background:#fee2e2;color:#991b1b;border:2px solid #fecaca}}#ok{{background:#dcfce7;color:#166534;border:1px solid #bbf7d0}}#exist,#ipblock,#wrong,#black,#deviceblock,#hwblock{{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}}#closed{{background:#fef9c3;color:#854d0e;border:1px solid #fde68a}}#timer{{background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;padding:9px 16px;border-radius:999px;font-size:13px;font-weight:800;display:none;margin:10px auto;width:fit-content}}</style></head><body><div class="card">{LOGO_TAG}<div class="header-lines"><div class="t1">📝 تسجيل الحضور V2.3 APK</div><div class="t2">الكلية التكنولوجية بالمحلة الكبرى</div><div class="t3">المعهد الصناعي بالمحلة</div><div class="t4">د.م/ محمود منصور - IP مفتوح</div><div style="font-size:12px;color:#475569;margin-top:6px">IP الحالي: <b id="currentIp">{real_ip}:8080</b></div><div id="studentQr" style="display:flex;justify-content:center;margin:10px auto"></div><button type="button" onclick="location.href='/local-app'" style="margin-bottom:8px;background:#0f766e">📱 دخول كطالب من نفس التطبيق</button></div><div id="timer">⏳ باقي: <span id="t">--:--</span></div><input id="pass" placeholder="كلمة سر المحاضرة"><input id="board" type="number" inputmode="numeric" placeholder="رقم السبورة"><input id="name" placeholder="الاسم رباعي عربي"><input id="nid" type="tel" maxlength="14" inputmode="numeric" placeholder="الرقم القومي 14 رقم"><button id="btn" onclick="sendData()">ارسال الحضور</button><div id="msgBox" class="msgbox"></div><div id="ok" class="msgbox">{cfg['after_msg']}</div><div id="exist" class="msgbox">⚠️ الرقم القومي مسجل</div><div id="ipblock" class="msgbox">❌ IP مكرر</div><div id="deviceblock" class="msgbox">❌ الجهاز سجل قبل كده</div><div id="hwblock" class="msgbox">❌ بصمة الجهاز مكررة</div><div id="closed" class="msgbox">⛔ مقفول</div><div id="wrong" class="msgbox">❌ كلمة السر غلط</div><div id="black" class="msgbox">⛔ محظور</div>{SOCIAL_FOOTER}</div><script>
-const SECRET="Mn2026_Secret_@#_KEY";let serverOffset=0;let isClosedByAdmin=false;function renderStudentQr(url){{let box=document.getElementById("studentQr");if(!box)return;box.innerHTML="";if(window.QRCode){{new QRCode(box,{{text:url,width:132,height:132}});}}else{{box.innerHTML="<small>افتح الرابط من نفس الشبكة: "+url+"</small>";}}}}async function refreshStudentIps(){{try{{let r=await fetch("/my_ips",{{cache:"no-store"}});let j=await r.json();let ip=j.primary||(j.ips||[])[0]||"{real_ip}";document.getElementById("currentIp").innerText=ip+":8080";let u="http://"+ip+":8080"+location.pathname+location.search;renderStudentQr(u);}}catch(e){{let ip='{real_ip}';document.getElementById('currentIp').innerText=ip+':8080';renderStudentQr('http://'+ip+':8080'+location.pathname+location.search);}}}}
-function getHardwareFingerprint(){{try{{let fp=[navigator.userAgent,screen.width,navigator.language].join('|');let h=0;for(let i=0;i<fp.length;i++){{h=((h<<5)-h)+fp.charCodeAt(i);h=h&h;}}return 'hw_'+Math.abs(h).toString(36);}}catch(e){{return 'hw_err';}}}}
-function getDeviceId(){{let s=localStorage.getItem('device_fingerprint');if(s)return s;let id=getHardwareFingerprint()+'_'+Math.random().toString(36).slice(2,6);localStorage.setItem('device_fingerprint',id);return id;}}
-function isAlreadyRegisteredLocally(){{return localStorage.getItem('already_registered_'+getDeviceId())==='1' || localStorage.getItem('my_nid_registered')!==null;}}
-function markAsRegistered(nid){{localStorage.setItem('already_registered_'+getDeviceId(),'1');localStorage.setItem('my_nid_registered',nid);}}
-function applyAlreadyRegisteredUI(){{if(isAlreadyRegisteredLocally()){{let btn=document.getElementById('btn');btn.disabled=true;btn.innerText='✅ سجلت قبل كده';document.getElementById('closed').style.display='block';document.getElementById('closed').innerText='✅ سجلت من الجهاز ده';return true;}}return false;}}
-async function syncTime(){{try{{let r=await fetch('/time');let d=await r.json();serverOffset=d.server-Date.now();}}catch(e){{}}}}
-function nowSynced(){{return Date.now()+serverOffset;}}
-function simpleHash(s){{let h=0;for(let i=0;i<s.length;i++){{h=((h<<5)-h)+s.charCodeAt(i);h=h&h;}}return Math.abs(h).toString(36);}}
-function getParams(){{let p=new URLSearchParams(location.search);return {{open:p.get('open'),s:p.get('s')}};}}let cached=getParams();
-function showMsg(t){{let b=document.getElementById('msgBox');b.innerText=t;b.style.display='block';}}
-function hideAll(){{['ok','exist','ipblock','deviceblock','hwblock','wrong','closed','black','msgBox'].forEach(x=>document.getElementById(x).style.display='none');}}
-async function sendData(){{
- if(isAlreadyRegisteredLocally()){{applyAlreadyRegisteredUI();return;}}
+const SECRET="Mn2026_Secret_@#_KEY";let serverOffset=0;let isClosedByAdmin=false;function renderStudentQr(url){let box=document.getElementById("studentQr");if(!box)return;box.innerHTML="";if(window.QRCode){new QRCode(box,{text:url,width:132,height:132});}else{box.innerHTML="<small>افتح الرابط من نفس الشبكة: "+url+"</small>";}}async function refreshStudentIps(){try{let r=await fetch("/my_ips",{cache:"no-store"});let j=await r.json();let ip=j.primary||(j.ips||[])[0]||"{real_ip}";document.getElementById("currentIp").innerText=ip+":8080";let u="http://"+ip+":8080"+location.pathname+location.search;renderStudentQr(u);}catch(e){let ip='{real_ip}';document.getElementById('currentIp').innerText=ip+':8080';renderStudentQr('http://'+ip+':8080'+location.pathname+location.search);}}
+function getHardwareFingerprint(){try{let fp=[navigator.userAgent,screen.width,navigator.language].join('|');let h=0;for(let i=0;i<fp.length;i++){h=((h<<5)-h)+fp.charCodeAt(i);h=h&h;}return 'hw_'+Math.abs(h).toString(36);}catch(e){return 'hw_err';}}
+function getDeviceId(){let s=localStorage.getItem('device_fingerprint');if(s)return s;let id=getHardwareFingerprint()+'_'+Math.random().toString(36).slice(2,6);localStorage.setItem('device_fingerprint',id);return id;}
+function isAlreadyRegisteredLocally(){return localStorage.getItem('already_registered_'+getDeviceId())==='1' || localStorage.getItem('my_nid_registered')!==null;}
+function markAsRegistered(nid){localStorage.setItem('already_registered_'+getDeviceId(),'1');localStorage.setItem('my_nid_registered',nid);}
+function applyAlreadyRegisteredUI(){if(isAlreadyRegisteredLocally()){let btn=document.getElementById('btn');btn.disabled=true;btn.innerText='✅ سجلت قبل كده';document.getElementById('closed').style.display='block';document.getElementById('closed').innerText='✅ سجلت من الجهاز ده';return true;}return false;}
+async function syncTime(){try{let r=await fetch('/time');let d=await r.json();serverOffset=d.server-Date.now();}catch(e){}}
+function nowSynced(){return Date.now()+serverOffset;
+}
+function simpleHash(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h=h&h;}return Math.abs(h).toString(36);}
+function getParams(){let p=new URLSearchParams(location.search);return {open:p.get('open'),s:p.get('s');}}let cached=getParams();
+function showMsg(t){let b=document.getElementById('msgBox');b.innerText=t;b.style.display='block';}
+function hideAll(){['ok','exist','ipblock','deviceblock','hwblock','wrong','closed','black','msgBox'].forEach(x=>document.getElementById(x).style.display='none');}
+async function sendData(){
+ if(isAlreadyRegisteredLocally()){applyAlreadyRegisteredUI();return;}
  hideAll();
  let p=document.getElementById('pass').value.trim(),b=document.getElementById('board').value.trim(),n=document.getElementById('name').value.trim(),id=document.getElementById('nid').value.trim();
- if(!p||!b||!n||!id){{showMsg('اكمل البيانات');return;}}
+ if(!p||!b||!n||!id){showMsg('اكمل البيانات');return;}
  id=id.replace(/[٠-٩۰-۹]/g,c=>'٠١٢٣٤٥٦٧٨٩'.includes(c)?'٠١٢٣٤٥٦٧٨٩'.indexOf(c):'۰۱۲۳۴۵۶۷۸۹'.indexOf(c)).replace(/[^0-9]/g,'');
- if(!/^\\d{{14}}$/.test(id)){{showMsg('الرقم القومي يجب أن يتكون من 14 رقمًا صحيحًا');document.getElementById('nid').classList.add('bad');return;}}
+ if(!/^\\d{14}$/.test(id)){showMsg('الرقم القومي يجب أن يتكون من 14 رقمًا صحيحًا');document.getElementById('nid').classList.add('bad');return;}
  document.getElementById('nid').classList.remove('bad');
- try{{
-  let r=await fetch('/save',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{open:cached.open||'',s:cached.s||'',name:n,nid:id,board:b,pass:p,deviceId:getDeviceId(),hwId:getHardwareFingerprint(),androidId:'',localApp:new URLSearchParams(location.search).get('local-app')==='1'}})}});
+ try{
+  let r=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({open:cached.open||'',s:cached.s||'',name:n,nid:id,board:b,pass:p,deviceId:getDeviceId(),hwId:getHardwareFingerprint(),androidId:'',localApp:new URLSearchParams(location.search).get('local-app')==='1'})});
   hideAll();
-  if(r.status==200){{markAsRegistered(id);document.getElementById('ok').style.display='block';let d=await r.json();if(d.redirect)location.href=d.redirect;}}
+  if(r.status==200){markAsRegistered(id);document.getElementById('ok').style.display='block';let d=await r.json();if(d.redirect)location.href=d.redirect;}
   else if(r.status==409)document.getElementById('exist').style.display='block';
   else if(r.status==410)document.getElementById('ipblock').style.display='block';
   else if(r.status==411)document.getElementById('deviceblock').style.display='block';
@@ -286,9 +272,9 @@ async function sendData(){{
   else if(r.status==422)showMsg('الرقم القومي غير صحيح');
   else if(r.status==401)document.getElementById('wrong').style.display='block';
   else document.getElementById('closed').style.display='block';
- }}catch(e){{showMsg('مش متصل');}}
-}}
-syncTime().then(()=>{{refreshStudentIps();setInterval(refreshStudentIps,1000);}});
+ }catch(e){showMsg('مش متصل');}
+}
+syncTime().then(()=>{refreshStudentIps();setInterval(refreshStudentIps,1000);});
 </script></body></html>"""
 
 def build_admin_html():
@@ -304,20 +290,20 @@ def build_admin_html():
     for ip in ips:
         if ip.startswith("192.168.43.") or ip.startswith("192.168.137.") or ip.startswith("10."): hotspot_ip = ip; break
     ips_html = ", ".join(ips)
-    return f"""<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>لوحة تحكم APK V2.3</title><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet"><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script><style>*{{box-sizing:border-box}}body{{margin:0;font-family:'Tajawal',Tahoma;background:linear-gradient(135deg,#eef2ff,#f5f7fb);padding:12px}} .container{{max-width:1100px;margin:auto}} .hidden{{display:none!important}} .header{{background:linear-gradient(135deg,#1e293b,#0f172a);color:#fff;padding:16px;border-radius:20px;display:flex;justify-content:space-between;align-items:center}} .stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:14px 0}} .stat{{background:#fff;border-radius:16px;padding:14px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.06)}} .stat b{{display:block;font-size:26px;color:#1a73e8}} .card{{background:#fff;border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:0 6px 20px rgba(0,0,0,.05)}} .card-title{{font-weight:800;margin-bottom:12px}} label{{font-size:12px;font-weight:700}} input,textarea{{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:12px;margin:4px 0}} .btn{{padding:12px 16px;border:none;border-radius:12px;font-weight:800;cursor:pointer}} .btn-primary{{background:#1a73e8;color:#fff}} .btn-success{{background:#16a34a;color:#fff}} .btn-danger{{background:#dc2626;color:#fff}} .btn-dark{{background:#0f172a;color:#fff}} .btn-warn{{background:#f59e0b;color:#fff}} .btn-light{{background:#f1f5f9}} .toolbar{{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}} .table-wrap{{overflow:auto}} table{{width:100%;border-collapse:collapse;min-width:750px}} th{{background:#0f172a;color:#fff;padding:10px}} td{{padding:8px;border-bottom:1px solid #eee;text-align:center}} .linkBox{{background:#f8fafc;border:1px dashed #94a3b8;border-radius:12px;padding:10px;margin-top:8px}} .linkRow{{display:flex;gap:6px;margin:6px 0}}</style></head><body><div class="container"><div class="header"><div style="display:flex;align-items:center;gap:10px">{HEADER_LOGO}<div><div style="font-weight:800">لوحة تحكم الأدمن الشاملة</div><div style="font-size:11px;opacity:.8">الكلية التكنولوجية - د.م/ محمود منصور</div></div></div><div><button onclick="goBackMain()" class="btn btn-light" style="color:#0f172a">🏠 الرئيسية</button></div></div><div class="stats"><div class="stat"><b id="activeCount">0</b><span>النشط</span></div><div class="stat"><b id="waitCount">0</b><span>انتظار</span></div><div class="stat"><b id="count">0</b><span>إجمالي</span></div></div><div class="card" style="background:#fffbeb"><div class="card-title">🔑 3- فتح المحاضرة وتوليد الباركود (هوتبوت أو روتر)</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label>كلمة سر المحاضرة</label><input id="lecturePass" placeholder="2026"></div><div><label>المدة بالدقائق</label><input id="minutes" type="number" value="30"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button onclick="openNow()" class="btn btn-success" style="flex:2">✅ افتح المحاضرة</button><button onclick="closeNow()" class="btn btn-danger" style="flex:1">⛔ اقفل</button></div><div id="shareBox" style="display:none;background:#e0f2fe;padding:14px;border-radius:14px;margin-top:14px"><div style="font-weight:800">📡 باركود وروابط الطلبة:</div><div style="text-align:center;background:#fff;border-radius:12px;padding:12px;margin:10px 0"><div id="adminQr" style="display:flex;justify-content:center"></div><div style="font-size:12px;margin-top:6px">امسح الباركود من موبايل الطالب</div></div><div class="linkBox"><div class="linkRow"><b>📱 هوتسبوت:</b><input id="shareLinkHotspot" readonly style="direction:ltr;font-size:11px;flex:1"><button onclick="copyById('shareLinkHotspot')" class="btn btn-warn" style="padding:6px">نسخ</button></div><div style="font-size:11px">IP الهوتسبوت: <b>{hotspot_ip}</b></div><div style="display:flex;gap:6px;margin-top:6px"><input id="customHotspotIp" value="{hotspot_ip}" style="flex:1"><button onclick="buildAllLinks()" class="btn btn-light" style="padding:6px">تحديث</button></div></div><div class="linkBox" style="background:#dcfce7"><div class="linkRow"><b>📶 روتر:</b><input id="shareLinkRouter" readonly style="direction:ltr;font-size:11px;flex:1"><button onclick="copyById('shareLinkRouter')" class="btn btn-success" style="padding:6px">نسخ</button></div><div style="font-size:11px">IP الراوتر: <b>{router_ip}</b></div><div style="display:flex;gap:6px;margin-top:6px"><input id="customRouterIp" value="{router_ip}" style="flex:1"><button onclick="buildAllLinks()" class="btn btn-light" style="padding:6px">تحديث</button></div></div></div></div><div class="card"><div class="card-title">📊 كشوف الحضور والتحكم</div><div class="toolbar"><button onclick="window.location.href='/export'" class="btn btn-success">⬇️ تصدير CSV</button><button onclick="clearData()" class="btn btn-light" style="color:#dc2626">🗑️ مسح الكل</button></div><div class="table-wrap"><table id="tbl"><thead><tr><th>#</th><th>الوقت</th><th>الاسم</th><th>القومي</th><th>IP</th><th>السبورة</th><th>🗑️ حذف</th></tr></thead><tbody></tbody></table></div></div>{SOCIAL_FOOTER}</div><script>
+    return f"""<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>لوحة تحكم APK V2.3</title><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet"><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script><style>*{{box-sizing:border-box}}body{{margin:0;font-family:'Tajawal',Tahoma;background:linear-gradient(135deg,#eef2ff,#f5f7fb);padding:12px}} .container{{max-width:1100px;margin:auto}} .hidden{{display:none!important}} .header{{background:linear-gradient(135deg,#1e293b,#0f172a);color:#fff;padding:16px;border-radius:20px;display:flex;justify-content:space-between;align-items:center}} .stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:14px 0}} .stat{{background:#fff;border-radius:16px;padding:14px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.06)}} .stat b{{display:block;font-size:26px;color:#1a73e8}} .card{{background:#fff;border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:0 6px 20px rgba(0,0,0,.05)}} .card-title{{font-weight:800;margin-bottom:12px}} label{{font-size:12px;font-weight:700}} input,textarea{{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:12px;margin:4px 0}} .btn{{padding:12px 16px;border:none;border-radius:12px;font-weight:800;cursor:pointer}} .btn-primary{{background:#1a73e8;color:#fff}} .btn-success{{background:#16a34a;color:#fff}} .btn-danger{{background:#dc2626;color:#fff}} .btn-dark{{background:#0f172a;color:#fff}} .btn-warn{{background:#f59e0b;color:#fff}} .btn-light{{background:#f1f5f9}} .toolbar{{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}} .table-wrap{{overflow:auto}} table{{width:100%;border-collapse:collapse;min-width:750px}} th{{background:#0f172a;color:#fff;padding:10px}} td{{padding:8px;border-bottom:1px solid #eee;text-align:center}} .linkBox{{background:#f8fafc;border:1px dashed #94a3b8;border-radius:12px;padding:10px;margin-top:8px}} .linkRow{{display:flex;gap:6px;margin:6px 0}}</style></head><body><div class="container"><div class="header"><div style="display:flex;align-items:center;gap:10px">{HEADER_LOGO}<div><div style="font-weight:800">لوحة تحكم الأدمن الشاملة</div><div style="font-size:11px;opacity:.8">الكلية التكنولوجية - د.م/ محمود منصور</div></div></div><div><button onclick="goBackMain()" class="btn btn-light" style="color:#0f172a">🏠 الرئيسية</button></div></div><div class="stats"><div class="stat"><b id="activeCount">0</b><span>النشط</span></div><div class="stat"><b id="waitCount">0</b><span>انتظار</span></div><div class="stat"><b id="count">0</b><span>إجمالي</span></div></div><div class="card" style="background:#fffbeb"><div class="card-title">🔑 3- فتح المحاضرة وتوليد الباركود (هوتسبوت أو روتر)</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label>كلمة سر المحاضرة</label><input id="lecturePass" placeholder="2026"></div><div><label>المدة بالدقائق</label><input id="minutes" type="number" value="30"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button onclick="openNow()" class="btn btn-success" style="flex:2">✅ افتح المحاضرة</button><button onclick="closeNow()" class="btn btn-danger" style="flex:1">⛔ اقفل</button></div><div id="shareBox" style="display:none;background:#e0f2fe;padding:14px;border-radius:14px;margin-top:14px"><div style="font-weight:800">📡 باركود وروابط الطلبة:</div><div style="text-align:center;background:#fff;border-radius:12px;padding:12px;margin:10px 0"><div id="adminQr" style="display:flex;justify-content:center"></div><div style="font-size:12px;margin-top:6px">امسح الباركود من موبايل الطالب</div></div><div class="linkBox"><div class="linkRow"><b>📱 هوتسبوت:</b><input id="shareLinkHotspot" readonly style="direction:ltr;font-size:11px;flex:1"><button onclick="copyById('shareLinkHotspot')" class="btn btn-warn" style="padding:6px">نسخ</button></div><div style="font-size:11px">IP الهوتسبوت: <b>{hotspot_ip}</b></div><div style="display:flex;gap:6px;margin-top:6px"><input id="customHotspotIp" value="{hotspot_ip}" style="flex:1"><button onclick="buildAllLinks()" class="btn btn-light" style="padding:6px">تحديث</button></div></div><div class="linkBox" style="background:#dcfce7"><div class="linkRow"><b>📶 روتر:</b><input id="shareLinkRouter" readonly style="direction:ltr;font-size:11px;flex:1"><button onclick="copyById('shareLinkRouter')" class="btn btn-success" style="padding:6px">نسخ</button></div><div style="font-size:11px">IP الراوتر: <b>{router_ip}</b></div><div style="display:flex;gap:6px;margin-top:6px"><input id="customRouterIp" value="{router_ip}" style="flex:1"><button onclick="buildAllLinks()" class="btn btn-light" style="padding:6px">تحديث</button></div></div></div></div><div class="card"><div class="card-title">📊 كشوف الحضور والتحكم</div><div class="toolbar"><button onclick="window.location.href='/export'" class="btn btn-success">⬇️ تصدير CSV</button><button onclick="clearData()" class="btn btn-light" style="color:#dc2626">🗑️ مسح الكل</button></div><div class="table-wrap"><table id="tbl"><thead><tr><th>#</th><th>الوقت</th><th>الاسم</th><th>القومي</th><th>IP</th><th>السبورة</th><th>🗑️ حذف</th></tr></thead><tbody></tbody></table></div></div>{SOCIAL_FOOTER}</div><script>
 const SECRET="Mn2026_Secret_@#_KEY";let serverOffset=0;let lastOpen="",lastSig="";
-async function syncTime(){{try{{let r=await fetch('/time');let d=await r.json();serverOffset=d.server-Date.now();}}catch(e){{}}}}
-function nowSynced(){{return Date.now()+serverOffset;}}
-function simpleHash(s){{let h=0;for(let i=0;i<s.length;i++){{h=((h<<5)-h)+s.charCodeAt(i);h=h&h;}}return Math.abs(h).toString(36);}}
-function drawAdminQr(){{let box=document.getElementById("adminQr");if(!box)return;box.innerHTML="";let u=document.getElementById("shareLinkHotspot")?.value||"";if(window.QRCode&&u)new QRCode(box,{{text:u,width:180,height:180}});else box.innerText=u;}}
-function buildAllLinks(){{if(!lastOpen)return;let baseHotspot='http://'+(document.getElementById('customHotspotIp').value.trim()||'{hotspot_ip}')+':8080';let path='/attendance.html?open='+lastOpen+'&s='+lastSig;document.getElementById('shareLinkHotspot').value=baseHotspot+path;document.getElementById('shareLinkRouter').value='http://'+(document.getElementById('customRouterIp').value.trim()||'{router_ip}')+':8080'+path;drawAdminQr();}}
-async function openNow(){{let lp=document.getElementById('lecturePass').value.trim();let mins=parseInt(document.getElementById('minutes').value);if(!lp){{alert('اكتب كلمة السر');return;}}let u=nowSynced()+mins*60*1000;let sig=simpleHash(u.toString()+SECRET);lastOpen=u.toString();lastSig=sig;buildAllLinks();document.getElementById('shareBox').style.display='block';await fetch('/set_config',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{open:u.toString(),s:sig,lecturePass:lp}})}});refresh();}}
-async function closeNow(){{document.getElementById('shareBox').style.display='none';await fetch('/set_config',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{open:"0",s:"",lecturePass:""}})}});refresh();alert('⛔ تم إغلاق المحاضرة');}}
-async function refresh(){{try{{let r=await fetch('/list');let d=await r.json();let cachedData=d.list||[];document.getElementById('count').innerText=cachedData.length;document.getElementById('activeCount').innerText=d.active;document.getElementById('waitCount').innerText=d.waiting;let tb=document.querySelector('#tbl tbody');tb.innerHTML='';cachedData.forEach((x,i)=>{{tb.innerHTML+=`<tr><td>${{i+1}}</td><td>${{x.time}}</td><td>${{x.name}}</td><td>${{x.nid}}</td><td>${{x.ip||''}}</td><td>${{x.board}}</td><td><button onclick="deleteOne('${{x.nid}}')" class="btn btn-danger" style="padding:4px 8px;font-size:11px">🗑️</button></td></tr>`;}});}}catch(e){{}}}}
-async function deleteOne(nid){{await fetch('/delete_one',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{nid}})}});refresh();}}
-async function clearData(){{if(confirm('مسح الكل؟')){{await fetch('/clear',{{method:'POST'}});refresh();}}}}
-function goBackMain(){{window.location.href='/';}}
-syncTime().then(()=>{{refresh();setInterval(refresh,2000);}});
+async function syncTime(){try{let r=await fetch('/time');let d=await r.json();serverOffset=d.server-Date.now();}catch(e){}}
+function nowSynced(){return Date.now()+serverOffset;}
+function simpleHash(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h=h&h;}return Math.abs(h).toString(36);}
+function drawAdminQr(){let box=document.getElementById("adminQr");if(!box)return;box.innerHTML="";let u=document.getElementById("shareLinkHotspot")?.value||"";if(window.QRCode&&u)new QRCode(box,{text:u,width:180,height:180});else box.innerText=u;}
+function buildAllLinks(){if(!lastOpen)return;let baseHotspot='http://'+(document.getElementById('customHotspotIp').value.trim()||'{hotspot_ip}')+':8080';let path='/attendance.html?open='+lastOpen+'&s='+lastSig;document.getElementById('shareLinkHotspot').value=baseHotspot+path;document.getElementById('shareLinkRouter').value='http://'+(document.getElementById('customRouterIp').value.trim()||'{router_ip}')+':8080'+path;drawAdminQr();}
+async function openNow(){let lp=document.getElementById('lecturePass').value.trim();let mins=parseInt(document.getElementById('minutes').value);if(!lp){alert('اكتب كلمة السر');return;}let u=nowSynced()+mins*60*1000;let sig=simpleHash(u.toString()+SECRET);lastOpen=u.toString();lastSig=sig;buildAllLinks();document.getElementById('shareBox').style.display='block';await fetch('/set_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({open:u.toString(),s:sig,lecturePass:lp})});refresh();}
+async function closeNow(){document.getElementById('shareBox').style.display='none';await fetch('/set_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({open:"0",s:"",lecturePass:""})});refresh();alert('⛔ تم إغلاق المحاضرة');}
+async function refresh(){try{let r=await fetch('/list');let d=await r.json();let cachedData=d.list||[];document.getElementById('count').innerText=cachedData.length;document.getElementById('activeCount').innerText=d.active;document.getElementById('waitCount').innerText=d.waiting;let tb=document.querySelector('#tbl tbody');tb.innerHTML='';cachedData.forEach((x,i)=>{tb.innerHTML+=`<tr><td>${i+1}</td><td>${x.time}</td><td>${x.name}</td><td>${x.nid}</td><td>${x.ip||''}</td><td>${x.board}</td><td><button onclick="deleteOne('${x.nid}')" class="btn btn-danger" style="padding:4px 8px;font-size:11px">🗑️</button></td></tr>`;});}catch(e){}}
+async function deleteOne(nid){await fetch('/delete_one',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nid})});refresh();}
+async function clearData(){if(confirm('مسح الكل؟')){await fetch('/clear',{method:'POST'});refresh();}}
+function goBackMain(){window.location.href='/';}
+syncTime().then(()=>{refresh();setInterval(refresh,2000);});
 </script></body></html>"""
 
 def ensure_files():
@@ -488,7 +474,6 @@ def run_server():
     except Exception:
         pass
 
-# --- واجهات تطبيق Kivy (من داخل التطبيق بالكامل وبدون متصفح خارجي) ---
 class MainApp(App):
     def build(self):
         configure_storage(self)
@@ -554,7 +539,6 @@ class MainApp(App):
         btn_admin.bind(on_press=lambda x: self.show_admin_login_popup())
         box.add_widget(btn_admin)
 
-        # شريط التنقل السفلي والتبويبات المطلوبة (الرئيسية، الإعدادات، اتصل بنا، الإصدار)
         nav_bar = self.build_navigation_bar()
         
         self.root_layout.add_widget(box)
@@ -684,9 +668,6 @@ class MainApp(App):
 
     def show_admin_dashboard(self):
         self.root_layout.clear_widgets()
-        # عرض لوحة التحكم للأدمن داخل التطبيق مباشرة عبر WebView أو شاشة مخصصة
-        from kivy.uix.browser import WebView if hasattr(Kivy, 'WebView') else None
-        # بما أن السيرفر يعمل محلياً، نعرض شاشة تحتوي على زر لفتح لوحة التحكم أو واجهة متكاملة
         box = BoxLayout(orientation='vertical', padding=20, spacing=15)
         
         lbl = Label(text=ar("🔐 مرحباً بك في لوحة تحكم الأدمن"), font_size='20sp', bold=True, size_hint_y=None, height=50)
@@ -697,6 +678,7 @@ class MainApp(App):
         self.apply_arabic_font(info)
         box.add_widget(info)
 
+        import webbrowser
         btn_open_web = Button(text=ar("🌐 فتح لوحة التحكم التفاعلية الشاملة"), background_color=(0.1, 0.6, 0.3, 1), size_hint_y=None, height=60, bold=True)
         self.apply_arabic_font(btn_open_web)
         btn_open_web.bind(on_press=lambda x: webbrowser.open(f"http://{get_real_ip()}:8080/admin"))
@@ -716,7 +698,7 @@ class MainApp(App):
         self.apply_arabic_font(lbl)
         content.add_widget(lbl)
 
-        lang_lbl = Label(text=ar("لغة التطبيق الحالية: العربية (العربية الأساسية داعمة للتشكيل)"), size_hint_y=None, height=35)
+        lang_lbl = Label(text=ar("لغة التطبيق الحالية: العربية"), size_hint_y=None, height=35)
         self.apply_arabic_font(lang_lbl)
         content.add_widget(lang_lbl)
 
@@ -738,7 +720,7 @@ class MainApp(App):
         self.apply_arabic_font(lbl)
         content.add_widget(lbl)
 
-        info = Label(text=ar("الكلية التكنولوجية بالمحلة الكبرى\nالمعهد الصناعي بالمحلة\nتطوير: د.م/ محمود منصور\n\nتواصل معنا عبر منصات التواصل الاجتماعي المتاحة في لوحة التحكم الرئيسية."), size_hint_y=None, height=120)
+        info = Label(text=ar("الكلية التكنولوجية بالمحلة الكبرى\nالمعهد الصناعي بالمحلة\nتطوير: د.م/ محمود منصور"), size_hint_y=None, height=100)
         self.apply_arabic_font(info)
         content.add_widget(info)
 
