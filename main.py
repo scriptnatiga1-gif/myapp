@@ -54,8 +54,11 @@ for font_path in FONT_CANDIDATES:
         break
 
 if SYSTEM_ARABIC_FONT:
-    LabelBase.register(name="ArabicFont", fn_regular=SYSTEM_ARABIC_FONT)
-    DEFAULT_FONT_NAME = "ArabicFont"
+    try:
+        LabelBase.register(name="ArabicFont", fn_regular=SYSTEM_ARABIC_FONT)
+        DEFAULT_FONT_NAME = "ArabicFont"
+    except Exception:
+        DEFAULT_FONT_NAME = None
 else:
     DEFAULT_FONT_NAME = None
 
@@ -267,14 +270,6 @@ def get_header_logo_tag():
                     return f'<img src="data:{mime};base64,{b64}" style="width:44px;height:44px;border-radius:12px;object-fit:cover;border:2px solid #fff;display:block;flex-shrink:0">'
         except: pass
     return '<div style="width:44px;height:44px;background:linear-gradient(135deg,#60a5fa,#1d4ed8);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:#fff;flex-shrink:0">🎓</div>'
-
-def simple_hash(s):
-    h = 0
-    for ch in s:
-        h = ((h << 5) - h) + ord(ch)
-        h = h & 0xFFFFFFFF
-        if h >= 0x80000000: h -= 0x100000000
-    return format(abs(h), '36')
 
 SOCIAL_FOOTER = """<div style="margin-top:28px;padding:16px 10px;border-top:1px solid #e2e8f0;text-align:center;background:linear-gradient(180deg,#fff,#f8fafc);border-radius:0 0 18px 18px"><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:10px"><a href="https://twitter.com/eng_mahmoud_man?s=07" target="_blank" style="width:36px;height:36px;background:#000;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:800;font-size:14px">𝕏</a><a href="https://github.com/natiga-script" target="_blank" style="width:36px;height:36px;background:#0f172a;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:11px;font-weight:800">GH</a><a href="https://www.facebook.com/profile.php?id=100009579078219" target="_blank" style="width:36px;height:36px;background:#1877F2;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:800">f</a><a href="https://www.linkedin.com/in/eng-mahmoud-mansour" target="_blank" style="width:36px;height:36px;background:#0A66C2;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:12px;font-weight:800">in</a><a href="https://www.instagram.com/eng_mahmoud_mansour/" target="_blank" style="width:36px;height:36px;background:radial-gradient(circle at 30% 107%,#fdf497 0%,#fdf497 5%,#fd5949 45%,#d6249f 60%,#285AEB 90%);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:11px;font-weight:800">IG</a></div><div style="font-size:11px;color:#64748b;line-height:1.8"><div>الكلية التكنولوجية بالمحلة الكبرى</div><div>المعهد الصناعي بالمحلة</div><div style="font-weight:800;color:#0f172a">د.م/ محمود منصور</div><div style="margin-top:6px;font-size:10px">© حقوق محفوظة لـ م/ محمود منصور 2026</div></div></div>"""
 
@@ -1076,7 +1071,7 @@ class MainApp(App):
         return self.root
 
     def build(self):
-        # لا نغلق التطبيق بصمت إذا فشل تجهيز الشاشة الأولى؛ نعرض الخطأ على الشاشة.
+        # معالجة آمنة لعدم غلق التطبيق (Crash) وعرض رسالة خطأ واضحة داخل التطبيق بدلاً من الخروج المفاجئ
         try:
             return self._build_original()
         except Exception:
