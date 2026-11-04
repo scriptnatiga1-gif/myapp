@@ -49,30 +49,35 @@ FONT_CANDIDATES = [
     "tajawal.ttf"
 ]
 for font_path in FONT_CANDIDATES:
-    if os.path.exists(font_path):
-        SYSTEM_ARABIC_FONT = font_path
-        break
+    try:
+        if font_path and os.path.exists(font_path):
+            SYSTEM_ARABIC_FONT = font_path
+            break
+    except Exception:
+        pass
 
+DEFAULT_FONT_NAME = None
 if SYSTEM_ARABIC_FONT:
     try:
         LabelBase.register(name="ArabicFont", fn_regular=SYSTEM_ARABIC_FONT)
         DEFAULT_FONT_NAME = "ArabicFont"
     except Exception:
         DEFAULT_FONT_NAME = None
-else:
-    DEFAULT_FONT_NAME = None
 
 def get_android_id():
     try:
         from jnius import autoclass
         PythonActivity = autoclass('org.kivy.android.PythonActivity')
-        activity = PythonActivity.mActivity
-        Secure = autoclass('android.provider.Settings$Secure')
-        return Secure.getString(activity.getContentResolver(), Secure.ANDROID_ID)
-    except:
-        return f"no-id-{os.urandom(2).hex()}"
+        activity = getattr(PythonActivity, 'mActivity', None)
+        if activity:
+            Secure = autoclass('android.provider.Settings$Secure')
+            res = Secure.getString(activity.getContentResolver(), Secure.ANDROID_ID)
+            if res:
+                return str(res)
+    except Exception:
+        pass
+    return "no-id-device"
 
-ANDROID_SERIAL = get_android_id()
 SECRET = "Mn2026_Secret_@#_KEY"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -89,27 +94,25 @@ def configure_storage(app=None):
             target = app.user_data_dir
     except Exception:
         pass
-    os.makedirs(target, exist_ok=True)
-    old_paths = {
-        "attendance.json": os.path.join(BASE_DIR, "attendance.json"),
-        "config.json": os.path.join(BASE_DIR, "config.json"),
-        "latest_link.txt": os.path.join(BASE_DIR, "latest_link.txt"),
-    }
-    for name, old_path in old_paths.items():
-        new_path = os.path.join(target, name)
-        if os.path.abspath(old_path) != os.path.abspath(new_path) and os.path.isfile(old_path) and not os.path.exists(new_path):
-            try:
-                import shutil
-                shutil.copy2(old_path, new_path)
-            except Exception as exc:
-                print("Data migration warning:", name, exc)
+    try:
+        os.makedirs(target, exist_ok=True)
+    except Exception:
+        target = BASE_DIR
+
     DATA_DIR = target
     DATA_FILE = os.path.join(DATA_DIR, "attendance.json")
     CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
     LATEST_FILE = os.path.join(DATA_DIR, "latest_link.txt")
 
 DEFAULT_ADMIN_PASS = "mansour2026"
-DEFAULT_CFG = {"lecturePass": "", "open": "0", "s": "", "max_active": 32, "stay_seconds": 2.0, "ip_check": False, "nid_check": True, "device_check": True, "hw_check": False, "android_check": True, "black_nids": [], "black_ips": [], "white_ips": [], "after_msg": "✅ تم التسجيل في موبايل الدكتور", "done_msg": "✅ تم تسجيل حضورك - توجه لمعمل 3 عند م/ احمد", "batch": 5, "adminPass": DEFAULT_ADMIN_PASS, "local_app_enabled": True}
+DEFAULT_CFG = {
+    "lecturePass": "", "open": "0", "s": "", "max_active": 32, "stay_seconds": 2.0, 
+    "ip_check": False, "nid_check": True, "device_check": True, "hw_check": False, 
+    "android_check": True, "black_nids": [], "black_ips": [], "white_ips": [], 
+    "after_msg": "✅ تم التسجيل في موبايل الدكتور", 
+    "done_msg": "✅ تم تسجيل حضورك - توجه لمعمل 3 عند م/ احمد", 
+    "batch": 5, "adminPass": DEFAULT_ADMIN_PASS, "local_app_enabled": True
+}
 active_ips = OrderedDict()
 waiting_queue = OrderedDict()
 
@@ -216,7 +219,10 @@ def load_cfg():
     except: return DEFAULT_CFG.copy()
 
 def save_cfg(c):
-    with open(CONFIG_FILE,'w',encoding='utf-8') as f: json.dump(c,f,ensure_ascii=False,indent=2)
+    try:
+        with open(CONFIG_FILE,'w',encoding='utf-8') as f: json.dump(c,f,ensure_ascii=False,indent=2)
+    except Exception:
+        pass
 
 def free_ip(ip):
     if ip in active_ips: del active_ips[ip]
@@ -327,7 +333,8 @@ def build_admin_html():
         if ip.startswith("192.168.43.") or ip.startswith("192.168.137."): hotspot_ip = ip; break
     if primary and primary.startswith("10."): hotspot_ip = primary
     ips_html = ", ".join(ips)
-    return f"""<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>لوحة تحكم APK V2.3</title><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet"><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script><style>*{{box-sizing:border-box}}body{{margin:0;font-family:'Tajawal',Tahoma;background:linear-gradient(135deg,#eef2ff,#f5f7fb);padding:12px}} .container{{max-width:1100px;margin:auto}} .hidden{{display:none!important}} .header{{background:linear-gradient(135deg,#1e293b,#0f172a);color:#fff;padding:16px;border-radius:20px;display:flex;justify-content:space-between}} .stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:14px 0}} .stat{{background:#fff;border-radius:16px;padding:14px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.06)}} .stat b{{display:block;font-size:26px;color:#1a73e8}} .card{{background:#fff;border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:0 6px 20px rgba(0,0,0,.05)}} .card-title{{font-weight:800;margin-bottom:12px}} label{{font-size:12px;font-weight:700}} input,textarea{{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:12px;margin:4px 0}} .btn{{padding:12px 16px;border:none;border-radius:12px;font-weight:800;cursor:pointer}} .btn-primary{{background:#1a73e8;color:#fff}} .btn-success{{background:#16a34a;color:#fff}} .btn-danger{{background:#dc2626;color:#fff}} .btn-dark{{background:#0f172a;color:#fff}} .btn-warn{{background:#f59e0b;color:#fff}} .btn-light{{background:#f1f5f9}} .toolbar{{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}} .table-wrap{{overflow:auto}} table{{width:100%;border-collapse:collapse;min-width:750px}} th{{background:#0f172a;color:#fff;padding:10px}} td{{padding:8px;border-bottom:1px solid #eee;text-align:center}} #loginBox{{max-width:400px;margin:50px auto;background:#fff;padding:24px;border-radius:22px;text-align:center}} #adminTimer{{background:#fff;color:#0f172a;padding:8px 14px;border-radius:999px;font-size:12px;font-weight:800}} .linkBox{{background:#f8fafc;border:1px dashed #94a3b8;border-radius:12px;padding:10px;margin-top:8px}} .linkRow{{display:flex;gap:6px;margin:6px 0}}</style></head><body><div id="loginBox">{LOGO_TAG}<h2>دخول ادمن APK V2.3</h2><p style="font-size:12px;color:#64748b">الكلية التكنولوجية - د.م/ محمود منصور<br>Serial: {ANDROID_SERIAL[:12]} - IP مفتوح</p><input id="adminPass" type="password" placeholder="باسورد الادمن"><button onclick="login()" class="btn btn-primary" style="width:100%;margin-top:12px">🔐 دخول</button><p id="loginErr" style="display:none;color:#dc2626">غلط</p>{SOCIAL_FOOTER}</div><div id="dash" class="container hidden"><div class="header"><div style="display:flex;align-items:center;gap:10px">{HEADER_LOGO}<div><div style="font-weight:800">APK V2.3 Pro - IP مفتوح + سيريال + Logo</div><div style="font-size:11px;opacity:.8">الكلية التكنولوجية - د.م/ محمود منصور</div></div></div><div style="display:flex;gap:8px"><div id="adminTimer">⏱️ <span id="adminT">--:--</span></div><div id="status" style="padding:8px 14px;border-radius:999px;background:#fff;color:#0f172a">🔴 مقفول</div><button onclick="logout()" class="btn btn-light" style="padding:8px">🚪</button></div></div><div class="stats"><div class="stat"><b id="activeCount">0</b><span>النشط</span><div style="font-size:11px">/ <span id="maxCount">{cfg['max_active']}</span></div></div><div class="stat"><b id="waitCount">0</b><span>انتظار</span></div><div class="stat"><b id="count">0</b><span>اجمالي</span></div><div class="stat"><b id="lastMin">0</b><span>اخر دقيقة</span></div><div class="stat"><b id="showCount">0</b><span>المعروض</span></div></div><div class="card" style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1px solid #fcd34d"><div class="card-title">🔑 تغيير باسورد الادمن</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label>القديم</label><input id="oldAdminPass" type="password"></div><div><label>الجديد</label><input id="newAdminPass" type="password"></div></div><button onclick="changeAdminPass()" class="btn btn-warn" style="width:100%;margin-top:10px">🔒 تغيير</button><div id="adminPassMsg" style="display:none;margin-top:8px;padding:10px;border-radius:10px;text-align:center"></div></div><div class="card" style="background:linear-gradient(135deg,#f8fafc,#eef2ff);border:1px dashed #93c5fd"><div class="card-title">⚙️ 1- اعدادات الطابور - IP مفتوح افتراضي</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label>عدد الطابور</label><input id="maxActive" type="number" value="{cfg['max_active']}"></div><div><label>دفعات</label><input id="batch" type="number" value="{cfg['batch']}"></div></div><div><label>مدة بقاء الطالب</label><div style="display:flex;gap:8px"><input id="staySec" type="range" min="1" max="10" step="0.5" value="{cfg['stay_seconds']}" style="flex:1"><span id="stayVal">{cfg['stay_seconds']}s</span></div></div><label>رسالة التسجيل</label><textarea id="afterMsg">{cfg['after_msg']}</textarea><label>رسالة /done</label><textarea id="doneMsg">{cfg['done_msg']}</textarea><button onclick="saveAdv()" class="btn btn-dark" style="width:100%;margin-top:10px">💾 حفظ الاعدادات</button></div><div class="card" style="background:#fffbeb"><div class="card-title">🔒 2- تحكم التسجيل - APK</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label style="display:flex;gap:6px"><input type="checkbox" id="ipCheck" {"checked" if cfg['ip_check'] else ""} style="width:auto"> IP واحد = طالب واحد (شيل الصح عشان هوت سبوت 30 طالب)</label></div><div><label style="display:flex;gap:6px"><input type="checkbox" id="nidCheck" {"checked" if cfg['nid_check'] else ""} style="width:auto"> منع القومي المكرر</label></div><div><label style="display:flex;gap:6px"><input type="checkbox" id="deviceCheck" {"checked" if cfg.get('device_check',True) else ""} style="width:auto"> 🔒 منع نفس الجهاز VPN</label></div><div><label style="display:flex;gap:6px"><input type="checkbox" id="hwCheck" {"checked" if cfg.get('hw_check',True) else ""} style="width:auto"> منع بصمة الجهاز hwId</label></div><div><label style="display:flex;gap:6px"><input type="checkbox" id="androidCheck" {"checked" if cfg.get('android_check',True) else ""} style="width:auto"> منع سيريال اندرويد</label></div></div><label>قائمة سوداء قومي</label><textarea id="blackNids">{','.join(cfg['black_nids'])}</textarea><label>سوداء IP</label><textarea id="blackIps">{','.join(cfg['black_ips'])}</textarea><label>بيضاء IP</label><textarea id="whiteIps">{','.join(cfg['white_ips'])}</textarea></div><div class="card"><div class="card-title">🔑 3- فتح المحاضرة</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label>كلمة سر المحاضرة</label><input id="lecturePass" placeholder="2026"></div><div><label>المدة بالدقائق</label><input id="minutes" type="number" value="30"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button onclick="openNow()" class="btn btn-success" style="flex:2">✅ افتح</button><button onclick="closeNow()" class="btn btn-danger" style="flex:1">⛔ اقفل</button></div><div id="shareBox" style="display:none;background:#e0f2fe;padding:14px;border-radius:14px;margin-top:14px"><div style="font-weight:800">📡 روابط الطلبة APK:</div><div style="text-align:center;background:#fff;border-radius:12px;padding:12px;margin:10px 0"><div id="adminQr" style="display:flex;justify-content:center"></div><div style="font-size:12px;margin-top:6px">امسح الكود من موبايل الطالب</div></div><div class="linkBox"><div class="linkRow"><b>📱 هوتسبوت APK:</b><input id="shareLinkHotspot" readonly style="direction:ltr;font-size:11px;flex:1"><button onclick="copyById('shareLinkHotspot')" class="btn btn-warn" style="padding:6px">نسخ</button></div><div style="font-size:11px">IP الهوتسبوت: <b>{hotspot_ip}</b> - كل IPs: {ips_html}</div><div style="display:flex;gap:6px;margin-top:6px"><input id="customHotspotIp" value="{hotspot_ip}" style="flex:1"><button onclick="updateHotspotLink()" class="btn btn-light" style="padding:6px">تحديث</button><button onclick="autoDetectIp()" class="btn btn-success" style="padding:6px">🔄 كشف</button></div></div><div class="linkBox" style="background:#dcfce7"><div class="linkRow"><b>📶 روتر:</b><input id="shareLinkRouter" readonly style="direction:ltr;font-size:11px;flex:1"><button onclick="copyById('shareLinkRouter')" class="btn btn-success" style="padding:6px">نسخ</button></div><div style="font-size:11px">IP الراوتر: <b>{router_ip}</b></div><div style="display:flex;gap:6px;margin-top:6px"><input id="customRouterIp" value="{router_ip}" style="flex:1"><button onclick="updateRouterLink()" class="btn btn-light" style="padding:6px">تحديث</button></div></div><div class="linkBox"><div class="linkRow"><b>🖥️ لوكالهوست:</b><input id="shareLinkLocal" readonly style="direction:ltr;font-size:11px;flex:1"><button onclick="copyById('shareLinkLocal')" class="btn btn-dark" style="padding:6px">نسخ</button></div></div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button onclick="window.open(document.getElementById('shareLinkLocal').value,'_blank')" class="btn btn-dark" style="flex:1">🖥️ لوكال</button><button onclick="window.open(document.getElementById('shareLinkRouter').value,'_blank')" class="btn btn-success" style="flex:1">📶 روتر</button><button onclick="window.open(document.getElementById('shareLinkHotspot').value,'_blank')" class="btn btn-warn" style="flex:1">📱 هوتسبوت</button><button onclick="window.open('/projector','_blank')" class="btn btn-light" style="flex:1">🖥️ بروجيكتور</button></div><div style="font-size:12px;margin-top:8px">كلمة السر: <b id="currentPass"></b> | المدة: <b id="currentMin"></b> د</div><div style="font-size:11px;margin-top:8px;color:#64748b;background:#fff;padding:8px;border-radius:8px">روابط الادمن: <code>/admin</code> - كل IPs: {ips_html}<br><b>رابط ثابت للطلبة طول الترم:</b> <code>/go</code> - بيحول اوتوماتيك على اخر محاضرة</div></div></div><div class="card"><div class="card-title">📊 4- البيانات والتصدير</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><input id="search" placeholder="🔍 بحث بالاسم او القومي"><input id="filterBoard" placeholder="فلتر رقم السبورة"></div><div class="toolbar"><button onclick="exportExcel()" class="btn btn-dark">📥 Excel CSV</button><button onclick="window.location.href='/export'" class="btn btn-success">⬇️ تصدير CSV عربي</button><button onclick="exportPDF()" class="btn btn-light">📄 PDF</button><button onclick="copyWhatsapp()" class="btn" style="background:#22c55e;color:#fff">🟢 واتساب</button><button onclick="clearQueue()" class="btn btn-warn">⚠️ فضي الطابور</button><button onclick="clearData()" class="btn btn-light" style="color:#dc2626">🗑️ مسح الكل</button></div><div class="table-wrap"><table id="tbl"><thead><tr><th>#</th><th>الوقت</th><th>الاسم</th><th>القومي</th><th>IP</th><th>الجهاز</th><th>سبورة</th><th>سيريال</th><th>🗑️ حذف</th></tr></thead><tbody></tbody></table></div>{SOCIAL_FOOTER}</div></div><script>
+    android_id_str = get_android_id()
+    return f"""<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>لوحة تحكم APK V2.3</title><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet"><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script><style>*{{box-sizing:border-box}}body{{margin:0;font-family:'Tajawal',Tahoma;background:linear-gradient(135deg,#eef2ff,#f5f7fb);padding:12px}} .container{{max-width:1100px;margin:auto}} .hidden{{display:none!important}} .header{{background:linear-gradient(135deg,#1e293b,#0f172a);color:#fff;padding:16px;border-radius:20px;display:flex;justify-content:space-between}} .stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:14px 0}} .stat{{background:#fff;border-radius:16px;padding:14px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.06)}} .stat b{{display:block;font-size:26px;color:#1a73e8}} .card{{background:#fff;border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:0 6px 20px rgba(0,0,0,.05)}} .card-title{{font-weight:800;margin-bottom:12px}} label{{font-size:12px;font-weight:700}} input,textarea{{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:12px;margin:4px 0}} .btn{{padding:12px 16px;border:none;border-radius:12px;font-weight:800;cursor:pointer}} .btn-primary{{background:#1a73e8;color:#fff}} .btn-success{{background:#16a34a;color:#fff}} .btn-danger{{background:#dc2626;color:#fff}} .btn-dark{{background:#0f172a;color:#fff}} .btn-warn{{background:#f59e0b;color:#fff}} .btn-light{{background:#f1f5f9}} .toolbar{{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}} .table-wrap{{overflow:auto}} table{{width:100%;border-collapse:collapse;min-width:750px}} th{{background:#0f172a;color:#fff;padding:10px}} td{{padding:8px;border-bottom:1px solid #eee;text-align:center}} #loginBox{{max-width:400px;margin:50px auto;background:#fff;padding:24px;border-radius:22px;text-align:center}} #adminTimer{{background:#fff;color:#0f172a;padding:8px 14px;border-radius:999px;font-size:12px;font-weight:800}} .linkBox{{background:#f8fafc;border:1px dashed #94a3b8;border-radius:12px;padding:10px;margin-top:8px}} .linkRow{{display:flex;gap:6px;margin:6px 0}}</style></head><body><div id="loginBox">{LOGO_TAG}<h2>دخول ادمن APK V2.3</h2><p style="font-size:12px;color:#64748b">الكلية التكنولوجية - د.م/ محمود منصور<br>Serial: {android_id_str[:12]} - IP مفتوح</p><input id="adminPass" type="password" placeholder="باسورد الادمن"><button onclick="login()" class="btn btn-primary" style="width:100%;margin-top:12px">🔐 دخول</button><p id="loginErr" style="display:none;color:#dc2626">غلط</p>{SOCIAL_FOOTER}</div><div id="dash" class="container hidden"><div class="header"><div style="display:flex;align-items:center;gap:10px">{HEADER_LOGO}<div><div style="font-weight:800">APK V2.3 Pro - IP مفتوح + سيريال + Logo</div><div style="font-size:11px;opacity:.8">الكلية التكنولوجية - د.م/ محمود منصور</div></div></div><div style="display:flex;gap:8px"><div id="adminTimer">⏱️ <span id="adminT">--:--</span></div><div id="status" style="padding:8px 14px;border-radius:999px;background:#fff;color:#0f172a">🔴 مقفول</div><button onclick="logout()" class="btn btn-light" style="padding:8px">🚪</button></div></div><div class="stats"><div class="stat"><b id="activeCount">0</b><span>النشط</span><div style="font-size:11px">/ <span id="maxCount">{cfg['max_active']}</span></div></div><div class="stat"><b id="waitCount">0</b><span>انتظار</span></div><div class="stat"><b id="count">0</b><span>اجمالي</span></div><div class="stat"><b id="lastMin">0</b><span>اخر دقيقة</span></div><div class="stat"><b id="showCount">0</b><span>المعروض</span></div></div><div class="card" style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1px solid #fcd34d"><div class="card-title">🔑 تغيير باسورد الادمن</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label>القديم</label><input id="oldAdminPass" type="password"></div><div><label>الجديد</label><input id="newAdminPass" type="password"></div></div><button onclick="changeAdminPass()" class="btn btn-warn" style="width:100%;margin-top:10px">🔒 تغيير</button><div id="adminPassMsg" style="display:none;margin-top:8px;padding:10px;border-radius:10px;text-align:center"></div></div><div class="card" style="background:linear-gradient(135deg,#f8fafc,#eef2ff);border:1px dashed #93c5fd"><div class="card-title">⚙️ 1- اعدادات الطابور - IP مفتوح افتراضي</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label>عدد الطابور</label><input id="maxActive" type="number" value="{cfg['max_active']}"></div><div><label>دفعات</label><input id="batch" type="number" value="{cfg['batch']}"></div></div><div><label>مدة بقاء الطالب</label><div style="display:flex;gap:8px"><input id="staySec" type="range" min="1" max="10" step="0.5" value="{cfg['stay_seconds']}" style="flex:1"><span id="stayVal">{cfg['stay_seconds']}s</span></div></div><label>رسالة التسجيل</label><textarea id="afterMsg">{cfg['after_msg']}</textarea><label>رسالة /done</label><textarea id="doneMsg">{cfg['done_msg']}</textarea><button onclick="saveAdv()" class="btn btn-dark" style="width:100%;margin-top:10px">💾 حفظ الاعدادات</button></div><div class="card" style="background:#fffbeb"><div class="card-title">🔒 2- تحكم التسجيل - APK</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label style="display:flex;gap:6px"><input type="checkbox" id="ipCheck" {"checked" if cfg['ip_check'] else ""} style="width:auto"> IP واحد = طالب واحد (شيل الصح عشان هوت سبوت 30 طالب)</label></div><div><label style="display:flex;gap:6px"><input type="checkbox" id="nidCheck" {"checked" if cfg['nid_check'] else ""} style="width:auto"> منع القومي المكرر</label></div><div><label style="display:flex;gap:6px"><input type="checkbox" id="deviceCheck" {"checked" if cfg.get('device_check',True) else ""} style="width:auto"> 🔒 منع نفس الجهاز VPN</label></div><div><label style="display:flex;gap:6px"><input type="checkbox" id="hwCheck" {"checked" if cfg.get('hw_check',True) else ""} style="width:auto"> منع بصمة الجهاز hwId</label></div><div><label style="display:flex;gap:6px"><input type="checkbox" id="androidCheck" {"checked" if cfg.get('android_check',True) else ""} style="width:auto"> منع سيريال اندرويد</label></div></div><label>قائمة سوداء قومي</label><textarea id="blackNids">{','.join(cfg['black_nids'])}</textarea><label>سوداء IP</label><textarea id="blackIps">{','.join(cfg['black_ips'])}</textarea><label>بيضاء IP</label><textarea id="whiteIps">{','.join(cfg['white_ips'])}</textarea></div><div class="card"><div class="card-title">🔑 3- فتح المحاضرة</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label>كلمة سر المحاضرة</label><input id="lecturePass" placeholder="2026"></div><div><label>المدة بالدقائق</label><input id="minutes" type="number" value="30"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button onclick="openNow()" class="btn btn-success" style="flex:2">✅ افتح</button><button onclick="closeNow()" class="btn btn-danger" style="flex:1">⛔ اقفل</button></div><div id="shareBox" style="display:none;background:#e0f2fe;padding:14px;border-radius:14px;margin-top:14px"><div style="font-weight:800">📡 روابط الطلبة APK:</div><div style="text-align:center;background:#fff;border-radius:12px;padding:12px;margin:10px 0"><div id="adminQr" style="display:flex;justify-content:center"></div><div style="font-size:12px;margin-top:6px">امسح الكود من موبايل الطالب</div></div><div class="linkBox"><div class="linkRow"><b>📱 هوتسبوت APK:</b><input id="shareLinkHotspot" readonly style="direction:ltr;font-size:11px;flex:1"><button onclick="copyById('shareLinkHotspot')" class="btn btn-warn" style="padding:6px">نسخ</button></div><div style="font-size:11px">IP الهوتسبوت: <b>{hotspot_ip}</b> - كل IPs: {ips_html}</div><div style="display:flex;gap:6px;margin-top:6px"><input id="customHotspotIp" value="{hotspot_ip}" style="flex:1"><button onclick="updateHotspotLink()" class="btn btn-light" style="padding:6px">تحديث</button><button onclick="autoDetectIp()" class="btn btn-success" style="padding:6px">🔄 كشف</button></div></div><div class="linkBox" style="background:#dcfce7"><div class="linkRow"><b>📶 روتر:</b><input id="shareLinkRouter" readonly style="direction:ltr;font-size:11px;flex:1"><button onclick="copyById('shareLinkRouter')" class="btn btn-success" style="padding:6px">نسخ</button></div><div style="font-size:11px">IP الراوتر: <b>{router_ip}</b></div><div style="display:flex;gap:6px;margin-top:6px"><input id="customRouterIp" value="{router_ip}" style="flex:1"><button onclick="updateRouterLink()" class="btn btn-light" style="padding:6px">تحديث</button></div></div><div class="linkBox"><div class="linkRow"><b>🖥️ لوكالهوست:</b><input id="shareLinkLocal" readonly style="direction:ltr;font-size:11px;flex:1"><button onclick="copyById('shareLinkLocal')" class="btn btn-dark" style="padding:6px">نسخ</button></div></div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button onclick="window.open(document.getElementById('shareLinkLocal').value,'_blank')" class="btn btn-dark" style="flex:1">🖥️ لوكال</button><button onclick="window.open(document.getElementById('shareLinkRouter').value,'_blank')" class="btn btn-success" style="flex:1">📶 روتر</button><button onclick="window.open(document.getElementById('shareLinkHotspot').value,'_blank')" class="btn btn-warn" style="flex:1">📱 هوتسبوت</button><button onclick="window.open('/projector','_blank')" class="btn btn-light" style="flex:1">🖥️ بروجيكتور</button></div><div style="font-size:12px;margin-top:8px">كلمة السر: <b id="currentPass"></b> | المدة: <b id="currentMin"></b> د</div><div style="font-size:11px;margin-top:8px;color:#64748b;background:#fff;padding:8px;border-radius:8px">روابط الادمن: <code>/admin</code> - كل IPs: {ips_html}<br><b>رابط ثابت للطلبة طول الترم:</b> <code>/go</code> - بيحول اوتوماتيك على اخر محاضرة</div></div></div><div class="card"><div class="card-title">📊 4- البيانات والتصدير</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><input id="search" placeholder="🔍 بحث بالاسم او القومي"><input id="filterBoard" placeholder="فلتر رقم السبورة"></div><div class="toolbar"><button onclick="exportExcel()" class="btn btn-dark">📥 Excel CSV</button><button onclick="window.location.href='/export'" class="btn btn-success">⬇️ تصدير CSV عربي</button><button onclick="exportPDF()" class="btn btn-light">📄 PDF</button><button onclick="copyWhatsapp()" class="btn" style="background:#22c55e;color:#fff">🟢 واتساب</button><button onclick="clearQueue()" class="btn btn-warn">⚠️ فضي الطابور</button><button onclick="clearData()" class="btn btn-light" style="color:#dc2626">🗑️ مسح الكل</button></div><div class="table-wrap"><table id="tbl"><thead><tr><th>#</th><th>الوقت</th><th>الاسم</th><th>القومي</th><th>IP</th><th>الجهاز</th><th>سبورة</th><th>سيريال</th><th>🗑️ حذف</th></tr></thead><tbody></tbody></table></div>{SOCIAL_FOOTER}</div></div><script>
 const SECRET="Mn2026_Secret_@#_KEY";let serverOffset=0;let lastOpen="",lastSig="";
 async function syncTime(){{try{{let r=await fetch('/time');let d=await r.json();serverOffset=d.server-Date.now();}}catch(e){{}}}}
 function nowSynced(){{return Date.now()+serverOffset;}}
@@ -632,7 +639,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Content-type','text/html; charset=utf-8')
             self.end_headers()
             LOGO_TAG = get_logo_tag(size=90, with_margin=True)
-            proj = f"""<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>بروجيكتور</title><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@800&display=swap" rel="stylesheet"><style>body{{font-family:'Tajawal',Tahoma;background:#000;color:#fff;text-align:center;padding:20px}}#big{{font-size:84px;font-weight:800}}#sub{{font-size:22px;margin-top:14px;color:#93c5fd;line-height:1.7}}#msg{{font-size:20px;margin-top:14px;color:#facc15}}.foot{{margin-top:30px;font-size:11px;color:#64748b}}</style></head><body>{LOGO_TAG}<div id="big">--:--</div><div id="sub">النشط <span id="a">0</span> / {cfg['max_active']} | انتظار <span id="w">0</span><br>الكلية التكنولوجية بالمحلة<br>د.م/ محمود منصور - APK V2.3</div><div id="msg"></div><div class="foot">© حقوق محفوظة لـ م/ محمود منصور 2026 - {ANDROID_SERIAL}</div><script>
+            android_id_str = get_android_id()
+            proj = f"""<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>بروجيكتور</title><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@800&display=swap" rel="stylesheet"><style>body{{font-family:'Tajawal',Tahoma;background:#000;color:#fff;text-align:center;padding:20px}}#big{{font-size:84px;font-weight:800}}#sub{{font-size:22px;margin-top:14px;color:#93c5fd;line-height:1.7}}#msg{{font-size:20px;margin-top:14px;color:#facc15}}.foot{{margin-top:30px;font-size:11px;color:#64748b}}</style></head><body>{LOGO_TAG}<div id="big">--:--</div><div id="sub">النشط <span id="a">0</span> / {cfg['max_active']} | انتظار <span id="w">0</span><br>الكلية التكنولوجية بالمحلة<br>د.م/ محمود منصور - APK V2.3</div><div id="msg"></div><div class="foot">© حقوق محفوظة لـ م/ محمود منصور 2026 - {android_id_str}</div><script>
 let serverOffset=0;let openUntil=localStorage.getItem('openUntil');
 async function syncTime(){{let r=await fetch('/time');let d=await r.json();serverOffset=d.server-Date.now();}}
 function nowSynced(){{return Date.now()+serverOffset;}}
@@ -751,9 +759,10 @@ class MainApp(App):
             Context = autoclass('android.content.Context')
             PowerManager = autoclass('android.os.PowerManager')
             activity = PythonActivity.mActivity
-            pm = activity.getSystemService(Context.POWER_SERVICE)
-            self._wake_lock = pm.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, "AttendanceApp::AttendanceWakeLock")
-            self._wake_lock.acquire()
+            if activity:
+                pm = activity.getSystemService(Context.POWER_SERVICE)
+                self._wake_lock = pm.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, "AttendanceApp::AttendanceWakeLock")
+                self._wake_lock.acquire()
         except Exception as e:
             print("Wake lock unavailable:", e)
 
@@ -761,7 +770,8 @@ class MainApp(App):
         try:
             ips = get_local_ips()
             primary = get_real_ip()
-            txt = f"APK الحضور - AutoDetect\nIP الحالي: {primary}:8080\nكل العناوين: {', '.join(ips[:6])}\nSerial: {ANDROID_SERIAL[:10]}\nالرابط الثابت: http://127.0.0.1:8080/go"
+            android_id_str = get_android_id()
+            txt = f"APK الحضور - AutoDetect\nIP الحالي: {primary}:8080\nكل العناوين: {', '.join(ips[:6])}\nSerial: {android_id_str[:10]}\nالرابط الثابت: http://127.0.0.1:8080/go"
             self.ip_label.text = ar(txt)
         except Exception:
             pass
@@ -795,9 +805,9 @@ class MainApp(App):
                 WebView = autoclass('android.webkit.WebView')
                 WebViewClient = autoclass('android.webkit.WebViewClient')
                 LayoutParams = autoclass('android.view.ViewGroup$LayoutParams')
-                Gravity = autoclass('android.view.Gravity')
                 Color = autoclass('android.graphics.Color')
                 activity = PythonActivity.mActivity
+                if not activity: return
 
                 frame = FrameLayout(activity)
                 column = LinearLayout(activity)
@@ -949,14 +959,17 @@ class MainApp(App):
             from jnius import autoclass
             Intent = autoclass('android.content.Intent')
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            intent = Intent("com.google.zxing.client.android.SCAN")
-            intent.putExtra("SCAN_MODE", "QR_CODE_MODE")
-            activity = PythonActivity.mActivity
-            if not getattr(self, "_activity_result_bound", False):
-                activity.bind(on_activity_result=self._on_activity_result)
-                self._activity_result_bound = True
-            activity.startActivityForResult(intent, 1201)
-            self.student_msg.text = ar("وجّه الكاميرا إلى QR الخاص بالدكتور.")
+            activity = getattr(PythonActivity, 'mActivity', None)
+            if activity:
+                intent = Intent("com.google.zxing.client.android.SCAN")
+                intent.putExtra("SCAN_MODE", "QR_CODE_MODE")
+                if not getattr(self, "_activity_result_bound", False):
+                    activity.bind(on_activity_result=self._on_activity_result)
+                    self._activity_result_bound = True
+                activity.startActivityForResult(intent, 1201)
+                self.student_msg.text = ar("وجّه الكاميرا إلى QR الخاص بالدكتور.")
+            else:
+                self.student_msg.text = ar("تعذر تحديد سياق النشاط الرئيسي بالأندرويد.")
         except Exception:
             self.student_msg.text = ar("لم يتم العثور على قارئ QR متوافق. استخدم الاتصال التلقائي أو اكتب عنوان الدكتور يدويًا.")
 
@@ -1038,10 +1051,11 @@ class MainApp(App):
             self.student_msg.text = ar("الرقم القومي غير صحيح. راجع 14 رقمًا وتاريخ الميلاد والمحافظة.")
             return
         self.student_msg.text = ar("جارٍ إرسال الحضور إلى هاتف الدكتور...")
-        device_id = "android-" + str(ANDROID_SERIAL)
+        android_id_val = get_android_id()
+        device_id = "android-" + str(android_id_val)
         payload = {"name": self.student_name.text.strip(), "nid": nid,
                    "board": self.student_board.text.strip(), "pass": self.student_pass.text.strip(),
-                   "deviceId": device_id, "hwId": device_id, "androidId": str(ANDROID_SERIAL), "localApp": True}
+                   "deviceId": device_id, "hwId": device_id, "androidId": str(android_id_val), "localApp": True}
         def worker():
             try:
                 with urllib.request.urlopen(server + '/get_config', timeout=4) as resp:
@@ -1071,7 +1085,6 @@ class MainApp(App):
         return self.root
 
     def build(self):
-        # معالجة آمنة لعدم غلق التطبيق (Crash) وعرض رسالة خطأ واضحة داخل التطبيق بدلاً من الخروج المفاجئ
         try:
             return self._build_original()
         except Exception:
@@ -1083,7 +1096,7 @@ class MainApp(App):
                 from kivy.uix.label import Label
                 from kivy.uix.boxlayout import BoxLayout
                 panel = BoxLayout(orientation='vertical', padding=12, spacing=8)
-                panel.add_widget(Label(text='حدث خطأ أثناء بدء التطبيق\nصوّر رسالة الخطأ التالية وأرسلها للمطور.', size_hint_y=None, height='70dp'))
+                panel.add_widget(Label(text=ar('حدث خطأ أثناء بدء التطبيق\nصوّر رسالة الخطأ التالية وأرسلها للمطور.'), size_hint_y=None, height='70dp'))
                 scroll = ScrollView()
                 msg = Label(text=details, size_hint_y=None, halign='left', valign='top')
                 msg.bind(width=lambda inst, width: setattr(inst, 'text_size', (width, None)))
@@ -1105,26 +1118,25 @@ class MainApp(App):
         except Exception:
             pass
 
-# --- تشخيص أعطال بدء التشغيل على Android ---
 def _write_startup_crash_log(exc_text):
-    """يحفظ تفاصيل أي انهيار في مساحة التطبيق الخاصة ويرسلها إلى Android logcat."""
     candidates = []
     try:
         from jnius import autoclass
         PythonActivity = autoclass('org.kivy.android.PythonActivity')
-        activity = PythonActivity.mActivity
-        files_dir = activity.getFilesDir().getAbsolutePath()
-        candidates.append(os.path.join(str(files_dir), 'hodour_startup_error.txt'))
-        try:
-            Log = autoclass('android.util.Log')
-            Log.e('HodourStartup', str(exc_text))
-        except Exception:
-            pass
-        try:
-            Toast = autoclass('android.widget.Toast')
-            Toast.makeText(activity, 'تعذر بدء التطبيق. يلزم استخراج سجل الخطأ.', Toast.LENGTH_LONG).show()
-        except Exception:
-            pass
+        activity = getattr(PythonActivity, 'mActivity', None)
+        if activity:
+            files_dir = activity.getFilesDir().getAbsolutePath()
+            candidates.append(os.path.join(str(files_dir), 'hodour_startup_error.txt'))
+            try:
+                Log = autoclass('android.util.Log')
+                Log.e('HodourStartup', str(exc_text))
+            except Exception:
+                pass
+            try:
+                Toast = autoclass('android.widget.Toast')
+                Toast.makeText(activity, 'تعذر بدء التطبيق. يلزم استخراج سجل الخطأ.', Toast.LENGTH_LONG).show()
+            except Exception:
+                pass
     except Exception:
         pass
     candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'hodour_startup_error.txt'))
