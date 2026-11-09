@@ -16,13 +16,13 @@ source.dir = .
 source.include_exts = py,png,jpg,jpeg,json,txt,ttf,kv
 
 # (list) List of inclusions using pattern matching
-source.include_patterns = *.ttf,icon.png,presplash.png
+source.include_patterns = *.ttf,icon.png,presplash.png,logo.*
 
 # (list) Source files to exclude (let it empty to exclude none)
 source.exclude_patterns = venv,bin,.buildozer,.git,__pycache__,*.log
 
 # (str) Application versioning
-version = 2.4.0
+version = 2.5.0
 
 # (list) Application requirements
 # تم إزالة تحديد الإصدار الدقيق لـ kivy لتجنب أخطاء البناء ووصفات p4a
@@ -32,7 +32,7 @@ requirements = python3,kivy,pillow,qrcode,arabic-reshaper,python-bidi,pyjnius,an
 # source.local_libs = 
 
 # (list) Permissions
-android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,CAMERA,VIBRATE,WAKE_LOCK
+android.permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,CHANGE_WIFI_STATE,CHANGE_NETWORK_STATE,CAMERA,VIBRATE,WAKE_LOCK
 
 # (int) Target Android API, should be as high as possible.
 android.api = 33
@@ -47,7 +47,7 @@ android.ndk = 25b
 android.sdk = 33
 
 # (bool) Indicate whether the screen should be bright or not
-# android.wakelock = True
+android.wakelock = True
 
 # (str) Supported orientations
 orientation = portrait
