@@ -19,7 +19,7 @@ from datetime import datetime
 from collections import OrderedDict
 import urllib.parse, mimetypes, socketserver
 
-# --- 1. معالج اللغة العربية المتكامل (حل جذري للحروف المنفصلة والمربعات) ---
+# --- 1. معالج اللغة العربية المتكامل (حل جذري للحروف المنفصلة والمربعات والرموز) ---
 try:
     import arabic_reshaper
     from bidi.algorithm import get_display
@@ -27,7 +27,6 @@ try:
 except ImportError:
     HAS_ARABIC_LIBS = False
 
-# جدول ربط الحروف العربية الاحتياطي في حال فشل استدعاء المكتبات على أندرويد
 ARABIC_FORMS = {
     'ء': ('ﺀ', 'ﺀ', 'ﺀ', 'ﺀ'), 'آ': ('ﺁ', 'ﺂ', 'ﺁ', 'ﺂ'), 'أ': ('ﺃ', 'ﺄ', 'ﺃ', 'ﺄ'),
     'ؤ': ('ﺅ', 'ﺆ', 'ﺅ', 'ﺆ'), 'إ': ('ﺇ', 'ﺈ', 'ﺇ', 'ﺈ'), 'ئ': ('ﺉ', 'ﺌ', 'ﺋ', 'ﺊ'),
@@ -65,7 +64,6 @@ def fallback_reshape_and_bidi(text):
         else:
             res.append(ch)
     reshaped_str = "".join(res)
-    # عكس المقاطع العربية مع الحفاظ على الأرقام والإنجليزية بترتيبها الصحيح
     tokens = re.findall(r'[\u0600-\u06FF\uFB50-\uFDFF\uFE70-\uFEFF]+|[^\u0600-\u06FF\uFB50-\uFDFF\uFE70-\uFEFF]+', reshaped_str)
     has_ar = any(re.search(r'[\u0600-\u06FF\uFB50-\uFDFF\uFE70-\uFEFF]', t) for t in tokens)
     if not has_ar:
@@ -78,16 +76,46 @@ def fallback_reshape_and_bidi(text):
             out.append(t)
     return "".join(out)
 
-def strip_unsupported_emojis(text):
-    # إزالة الإيموجي التي تظهر كمربعات في خط Kivy الافتراضي
-    return re.sub(r'[\U00010000-\U0010ffff\u2600-\u27BF]', '', str(text)).strip()
+def sanitize_for_kivy_font(text):
+    # الخطوط العربية في أندرويد لا تحتوي على حروف إنجليزية أو رموز الخاصة بـ ASCII مما يسبب ظهور مربعات ▯▯
+    # لذلك نُبقي فقط الحروف العربية والأرقام وعلامات الترقيم الأساسية ونحذف أو نستبدل الحروف اللاتينية في واجهة Kivy
+    s = str(text)
+    s = re.sub(r'[\U00010000-\U0010ffff\u2600-\u27BF]', '', s)
+    # استبدال الكلمات الإنجليزية الشائعة في الواجهة بمقابلها العربي أو إزالة الحروف اللاتينية غير المدعومة في الخط العربي
+    replacements = {
+        "GitHub": "جيت هاب",
+        "Facebook": "فيسبوك",
+        "LinkedIn": "لينكد إن",
+        "Instagram": "انستجرام",
+        "Termux": "تيرمكس",
+        "Online": "متصل",
+        "QR": "كيو آر",
+        "IP": "آي بي",
+        "http://": "",
+        "https://": "",
+        "Pro": "برو",
+        "V2.5.0": "2.5.0",
+        "English": "انجليزي",
+        "X": "إكس",
+        "->": ":",
+    }
+    for k, v in replacements.items():
+        s = s.replace(k, v)
+    # إزالة أي أحرف لاتينية متبقية حتى لا تظهر كمربعات في خط NotoNaskhArabic
+    s = re.sub(r'[A-Za-z]+', '', s)
+    # تنظيف الرموز غير المدعومة مثل الشرطات المائلة والأقواس المربعة
+    s = s.replace('[', '(').replace(']', ')').replace('/', ' - ').replace('(', '').replace(')', '')
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
 
 def ar(text, lang="ar"):
     if not text:
         return ""
-    clean = strip_unsupported_emojis(str(text))
     if lang == "en":
-        return clean
+        return re.sub(r'[\u0600-\u06FF]+', '', str(text)).strip()
+    clean = sanitize_for_kivy_font(text)
+    if not clean:
+        return ""
     if HAS_ARABIC_LIBS:
         try:
             reshaped = arabic_reshaper.reshape(clean)
@@ -102,9 +130,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_CANDIDATES = [
     os.path.join(BASE_DIR, "Amiri-Regular.ttf"),
     os.path.join(BASE_DIR, "tajawal.ttf"),
+    "/system/fonts/NotoSansArabic-Regular.ttf",
     "/system/fonts/NotoNaskhArabic-Regular.ttf",
     "/system/fonts/DroidSansArabic.ttf",
-    "/system/fonts/NotoSansArabic-Regular.ttf",
 ]
 for font_path in FONT_CANDIDATES:
     if os.path.exists(font_path):
@@ -174,7 +202,7 @@ DEFAULT_CFG = {
 }
 active_ips = OrderedDict()
 waiting_queue = OrderedDict()
-recent_connections = []  # لتتبع سجل اتصالات الطلاب الحي في شاشة السيرفر
+recent_connections = []
 
 def log_connection_event(ip, status, detail=""):
     now_str = datetime.now().strftime("%H:%M:%S")
@@ -828,11 +856,41 @@ class ModernInput(TextInput):
         self.foreground_color = PALETTE["text_dark"]
         self.cursor_color = PALETTE["primary"]
         self.hint_text_color = PALETTE["text_muted"]
+        self._is_updating = False
+        self.raw_value = ""
+        self.bind(text=self._on_text_change)
         self.update_lang()
+
+    def _on_text_change(self, instance, val):
+        if self._is_updating or self.password:
+            return
+        # إذا كان النص يحتوي على حروف عربية نعيد تشكيلها مباشرة أثناء الكتابة حتى لا تظهر مقلوبة أو منفصلة
+        if re.search(r'[\u0600-\u06FF]', val):
+            self._is_updating = True
+            # نحتفظ بالنص الخام في raw_value إذا كتب المستخدم حروفاً عادية
+            clean_raw = re.sub(r'[\uFE70-\uFEFF]', '', val)
+            self.raw_value = clean_raw
+            Clock.schedule_once(lambda dt: self._apply_arabic_display(val), 0)
+
+    def _apply_arabic_display(self, val):
+        try:
+            # نستخدم Roboto للعرض إذا كان النص إنجليزي/أرقام فقط، و ArabicFont إذا كان عربي
+            if re.search(r'[\u0600-\u06FF\uFB50-\uFDFF\uFE70-\uFEFF]', val):
+                if DEFAULT_FONT_NAME:
+                    self.font_name = DEFAULT_FONT_NAME
+            else:
+                self.font_name = 'Roboto'
+        finally:
+            self._is_updating = False
+
+    def get_clean_text(self):
+        return self.raw_value.strip() if self.raw_value else self.text.strip()
 
     def update_lang(self):
         app = App.get_running_app()
         lang = getattr(app, "current_lang", "ar") if app else "ar"
+        if DEFAULT_FONT_NAME:
+            self.font_name = DEFAULT_FONT_NAME
         self.hint_text = ar(self.raw_hint, lang)
 
 # --- 4. الشريط العلوي والسفلي الموحد في جميع الصفحات ---
@@ -925,7 +983,7 @@ class BaseScreen(Screen):
         for btn in (self.nav.btn_home, self.nav.btn_settings, self.nav.btn_contact):
             btn.update_lang()
 
-# شاشة 1: اختيار نوع الدخول (طالب / أدمن) بعد شاشة الترحيب مباشرة
+# شاشة 1: اختيار نوع الدخول (طالب / أدمن)
 class RoleSelectScreen(BaseScreen):
     def __init__(self, app_ref, **kwargs):
         super().__init__(app_ref, **kwargs)
@@ -938,7 +996,7 @@ class RoleSelectScreen(BaseScreen):
         if logo_path:
             welcome_card.add_widget(Image(source=logo_path, size_hint=(None, None), size=(dp(76), dp(76)), pos_hint={'center_x': 0.5}))
         self.lbl_inst = ArLabel(raw_text="الكلية التكنولوجية بالمحلة الكبرى", font_size='18sp', bold=True, color=PALETTE["text_dark"], size_hint_y=None, height=dp(32))
-        self.lbl_sub = ArLabel(raw_text="المعهد الصناعي بالمحلة - د.م/ محمود منصور", font_size='14sp', color=PALETTE["primary"], size_hint_y=None, height=dp(26))
+        self.lbl_sub = ArLabel(raw_text="المعهد الصناعي بالمحلة - د.م محمود منصور", font_size='14sp', color=PALETTE["primary"], size_hint_y=None, height=dp(26))
         self.lbl_choose = ArLabel(raw_text="اختر نوع الدخول للمتابعة", font_size='15sp', bold=True, color=PALETTE["text_muted"], size_hint_y=None, height=dp(28))
         welcome_card.add_widget(self.lbl_inst)
         welcome_card.add_widget(self.lbl_sub)
@@ -976,7 +1034,8 @@ class RoleSelectScreen(BaseScreen):
             return
         content = BoxLayout(orientation='vertical', padding=dp(14), spacing=dp(12))
         lbl = ArLabel(raw_text="أدخل كلمة سر الأدمن للمتابعة", font_size='15sp', color=(1, 1, 1, 1), size_hint_y=None, height=dp(34))
-        pwd_input = ModernInput(raw_hint="كلمة سر الأدمن (مثال: mansour2026)", password=True, multiline=False, size_hint_y=None, height=dp(48))
+        pwd_input = ModernInput(raw_hint="كلمة سر الأدمن الافتراضية 2026", password=True, multiline=False, size_hint_y=None, height=dp(48))
+        pwd_input.font_name = 'Roboto'
         err_lbl = ArLabel(raw_text="", font_size='13sp', color=(1, 0.4, 0.4, 1), size_hint_y=None, height=dp(26))
         btns = BoxLayout(orientation='horizontal', spacing=dp(10), size_hint_y=None, height=dp(46))
         btn_ok = ModernButton(raw_text="دخول", bg_color=PALETTE["success"])
@@ -1012,7 +1071,7 @@ class RoleSelectScreen(BaseScreen):
         for w in (self.lbl_inst, self.lbl_sub, self.lbl_choose, self.lbl_st_title, self.lbl_st_desc, self.btn_student, self.lbl_ad_title, self.lbl_ad_desc, self.btn_admin):
             w.update_lang()
 
-# شاشة 2: صفحة الطالب لتسجيل الحضور
+# شاشة 2: صفحة الطالب لتسجيل الحضور (محدثة لعرض واجهة المتصفح الكاملة أو التسجيل المباشر)
 class StudentScreen(BaseScreen):
     def __init__(self, app_ref, **kwargs):
         super().__init__(app_ref, **kwargs)
@@ -1026,11 +1085,17 @@ class StudentScreen(BaseScreen):
         self.lbl_title = ArLabel(raw_text="تسجيل حضور الطالب", font_size='19sp', bold=True, color=PALETTE["primary"], size_hint_y=None, height=dp(36))
         card.add_widget(self.lbl_title)
 
-        self.server_url = ModernInput(text=f"http://{get_real_ip()}:8080", raw_hint="عنوان السيرفر مثل http://192.168.43.1:8080", multiline=False, size_hint_y=None, height=dp(50))
+        # زر فتح صفحة الطالب الكاملة بنفس تنسيق المتصفح تماماً
+        self.btn_web_student = ModernButton(raw_text="فتح صفحة الطالب الكاملة بالتنسيق الكامل", bg_color=PALETTE["primary_dark"], size_hint_y=None, height=dp(48), font_size='15sp')
+        self.btn_web_student.bind(on_press=self._open_full_student_page)
+        card.add_widget(self.btn_web_student)
+
+        self.server_url = ModernInput(text=f"http://{get_real_ip()}:8080", raw_hint="عنوان السيرفر", multiline=False, size_hint_y=None, height=dp(50))
+        self.server_url.font_name = 'Roboto'
         card.add_widget(self.server_url)
 
         actions = BoxLayout(orientation='horizontal', spacing=dp(8), size_hint_y=None, height=dp(48))
-        self.btn_scan = ModernButton(raw_text="مسح الباركود QR", bg_color=PALETTE["primary"], font_size='14sp')
+        self.btn_scan = ModernButton(raw_text="مسح الباركود", bg_color=PALETTE["primary"], font_size='14sp')
         self.btn_discover = ModernButton(raw_text="اتصال تلقائي بالشبكة", bg_color=PALETTE["accent"], font_size='14sp')
         self.btn_scan.bind(on_press=self._scan_qr)
         self.btn_discover.bind(on_press=self._discover_server)
@@ -1041,7 +1106,7 @@ class StudentScreen(BaseScreen):
         self.student_pass = ModernInput(raw_hint="كلمة سر المحاضرة", password=True, multiline=False, size_hint_y=None, height=dp(50))
         self.student_board = ModernInput(raw_hint="رقم السبورة", multiline=False, input_filter='int', size_hint_y=None, height=dp(50))
         self.student_name = ModernInput(raw_hint="الاسم رباعي باللغة العربية", multiline=False, size_hint_y=None, height=dp(50))
-        self.student_nid = ModernInput(raw_hint="الرقم القومي (14 رقم)", multiline=False, input_filter='int', size_hint_y=None, height=dp(50))
+        self.student_nid = ModernInput(raw_hint="الرقم القومي 14 رقم", multiline=False, input_filter='int', size_hint_y=None, height=dp(50))
 
         for inp in (self.student_pass, self.student_board, self.student_name, self.student_nid):
             card.add_widget(inp)
@@ -1061,6 +1126,12 @@ class StudentScreen(BaseScreen):
         scroll.add_widget(form)
         self.content_area.add_widget(scroll)
 
+    def _open_full_student_page(self, *_):
+        base = self._set_server_url(self.server_url.text)
+        if not base:
+            base = f"http://{get_real_ip()}:8080"
+        self.app_ref.open_in_app_webview('/attendance.html', base_url=base)
+
     def _set_server_url(self, value):
         value = (value or "").strip()
         if value and not value.startswith(("http://", "https://")):
@@ -1068,6 +1139,7 @@ class StudentScreen(BaseScreen):
         if value.endswith("/"):
             value = value[:-1]
         self.server_url.text = value
+        self.server_url.font_name = 'Roboto'
         return value
 
     def _scan_qr(self, *_):
@@ -1084,7 +1156,7 @@ class StudentScreen(BaseScreen):
             activity.startActivityForResult(intent, 1201)
             self.student_msg.set_raw("وجه الكاميرا إلى باركود الدكتور")
         except Exception:
-            self.student_msg.set_raw("استخدم زر الاتصال التلقائي بالشبكة أو اكتب IP الدكتور يدوياً")
+            self.student_msg.set_raw("استخدم زر الاتصال التلقائي بالشبكة أو اكتب عنوان الدكتور يدوياً")
 
     def _on_activity_result(self, request_code, result_code, intent):
         try:
@@ -1098,10 +1170,13 @@ class StudentScreen(BaseScreen):
             parsed = urlparse(raw if raw.startswith(('http://', 'https://')) else 'http://' + raw)
             if parsed.hostname:
                 port = parsed.port or 8080
-                self._set_server_url(f"http://{parsed.hostname}:{port}")
-                self.student_msg.set_raw("تم مسح الباركود بنجاح! أكمل بياناتك واضغط إرسال")
-        except Exception as exc:
-            self.student_msg.set_raw("تعذر قراءة الباركود: " + str(exc))
+                base = f"http://{parsed.hostname}:{port}"
+                self._set_server_url(base)
+                self.student_msg.set_raw("تم مسح الباركود بنجاح! جارٍ فتح صفحة الحضور...")
+                full_path = parsed.path + ("?" + parsed.query if parsed.query else "")
+                Clock.schedule_once(lambda dt: self.app_ref.open_in_app_webview(full_path or '/attendance.html', base_url=base), 0.2)
+        except Exception:
+            self.student_msg.set_raw("تعذر قراءة الباركود، حاول مرة أخرى")
 
     def _discover_server(self, *_):
         self.student_msg.set_raw("جارٍ البحث عن سيرفر المحاضرة على الشبكة...")
@@ -1145,6 +1220,7 @@ class StudentScreen(BaseScreen):
                     self._set_server_url(found)
                     self.student_msg.color = PALETTE["success"]
                     self.student_msg.set_raw("تم الاتصال بسيرفر الدكتور بنجاح")
+                    self.app_ref.open_in_app_webview('/attendance.html', base_url=found)
                 else:
                     self.student_msg.color = PALETTE["danger"]
                     self.student_msg.set_raw("لم يتم العثور على محاضرة مفتوحة. تأكد من الاتصال بنفس الشبكة")
@@ -1158,19 +1234,20 @@ class StudentScreen(BaseScreen):
             self.student_msg.set_raw("حدد عنوان السيرفر أولاً")
             return
         nid = normalize_nid(self.student_nid.text)
-        if not self.student_pass.text.strip() or not self.student_board.text.strip() or not self.student_name.text.strip() or not nid:
+        name_val = self.student_name.get_clean_text()
+        if not self.student_pass.text.strip() or not self.student_board.text.strip() or not name_val or not nid:
             self.student_msg.color = PALETTE["danger"]
             self.student_msg.set_raw("من فضلك أكمل جميع البيانات المطلوبة")
             return
         if not valid_national_id(nid):
             self.student_msg.color = PALETTE["danger"]
-            self.student_msg.set_raw("الرقم القومي غير صحيح (يجب أن يكون 14 رقماً صحيحاً)")
+            self.student_msg.set_raw("الرقم القومي غير صحيح يجب أن يكون 14 رقماً صحيحاً")
             return
         self.student_msg.color = PALETTE["primary"]
         self.student_msg.set_raw("جارٍ إرسال بيانات الحضور...")
         device_id = "android-" + str(ANDROID_SERIAL)
         payload = {
-            "name": self.student_name.text.strip(), "nid": nid,
+            "name": name_val, "nid": nid,
             "board": self.student_board.text.strip(), "pass": self.student_pass.text.strip(),
             "deviceId": device_id, "hwId": device_id, "androidId": str(ANDROID_SERIAL), "localApp": True
         }
@@ -1193,7 +1270,7 @@ class StudentScreen(BaseScreen):
                     411: "هذا الهاتف سجل الحضور بالفعل", 422: "الرقم القومي غير صحيح",
                     429: "الطابور ممتلئ، انتظر ثوانٍ وحاول مجدداً"
                 }
-                msg = messages.get(e.code, f"خطأ في التسجيل ({e.code})")
+                msg = messages.get(e.code, "خطأ في التسجيل")
                 col = PALETTE["danger"]
             except Exception:
                 msg = "تعذر الاتصال بهاتف الدكتور. تأكد من الواي فاي أو الهوتسبوت"
@@ -1206,18 +1283,17 @@ class StudentScreen(BaseScreen):
 
     def refresh_texts(self):
         super().refresh_texts()
-        for w in (self.lbl_title, self.server_url, self.btn_scan, self.btn_discover, self.student_pass, self.student_board, self.student_name, self.student_nid, self.student_msg, self.btn_send):
+        for w in (self.lbl_title, self.btn_web_student, self.btn_scan, self.btn_discover, self.student_pass, self.student_board, self.student_name, self.student_nid, self.student_msg, self.btn_send):
             w.update_lang()
 
-# شاشة 3: مركز تحكم الأدمن (السيرفر الحي + لوحة التحكم + الباركود)
+# شاشة 3: مركز تحكم الأدمن (السيرفر الحي + لوحة التحكم الكاملة داخل التطبيق + الباركود)
 class AdminHubScreen(BaseScreen):
     def __init__(self, app_ref, **kwargs):
         super().__init__(app_ref, **kwargs)
-        # شريط تبويبات داخلي للأدمن (السيرفر | لوحة التحكم | باركود الطلاب)
         tabs_bar = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(46), spacing=dp(6))
         self.tab_srv = ModernButton(raw_text="السيرفر والاتصال", bg_color=PALETTE["primary"], radius=10, font_size='13sp')
         self.tab_dash = ModernButton(raw_text="لوحة تحكم الأدمن", bg_color=PALETTE["primary_dark"], radius=10, font_size='13sp')
-        self.tab_qr = ModernButton(raw_text="باركود الطلاب QR", bg_color=PALETTE["accent"], radius=10, font_size='13sp')
+        self.tab_qr = ModernButton(raw_text="باركود الطلاب", bg_color=PALETTE["accent"], radius=10, font_size='13sp')
 
         self.tab_srv.bind(on_press=lambda *_: self._switch_subview("server"))
         self.tab_dash.bind(on_press=lambda *_: self.app_ref.open_in_app_webview('/admin'))
@@ -1240,20 +1316,18 @@ class AdminHubScreen(BaseScreen):
         box = BoxLayout(orientation='vertical', spacing=dp(10), size_hint_y=None)
         box.bind(minimum_height=box.setter('height'))
 
-        # بطاقة حالة السيرفر والشبكة (بديل Termux)
-        status_card = CardBox(orientation='vertical', padding=dp(14), spacing=dp(8), size_hint_y=None, height=dp(185))
-        self.lbl_srv_head = ArLabel(raw_text="حالة السيرفر المحلي (بديل Termux)", font_size='17sp', bold=True, color=PALETTE["primary"], size_hint_y=None, height=dp(28))
-        self.lbl_srv_info = ArLabel(raw_text="جارٍ فحص الشبكة...", font_size='14sp', color=PALETTE["text_dark"], size_hint_y=None, height=dp(95), halign='center', valign='middle')
+        status_card = CardBox(orientation='vertical', padding=dp(14), spacing=dp(8), size_hint_y=None, height=dp(205))
+        self.lbl_srv_head = ArLabel(raw_text="حالة السيرفر المحلي", font_size='17sp', bold=True, color=PALETTE["primary"], size_hint_y=None, height=dp(28))
+        self.lbl_srv_info = ArLabel(raw_text="جارٍ فحص الشبكة...", font_size='14sp', color=PALETTE["text_dark"], size_hint_y=None, height=dp(105), halign='center', valign='middle')
         self.lbl_srv_info.bind(size=self.lbl_srv_info.setter('text_size'))
 
-        btn_open_web = ModernButton(raw_text="فتح لوحة الإعدادات والكشوفات داخل التطبيق", bg_color=PALETTE["primary_dark"], size_hint_y=None, height=dp(44), font_size='14sp')
+        btn_open_web = ModernButton(raw_text="فتح لوحة الإعدادات والكشوفات داخل التطبيق", bg_color=PALETTE["primary_dark"], size_hint_y=None, height=dp(46), font_size='14sp')
         btn_open_web.bind(on_press=lambda *_: self.app_ref.open_in_app_webview('/admin'))
 
         status_card.add_widget(self.lbl_srv_head)
         status_card.add_widget(self.lbl_srv_info)
         status_card.add_widget(btn_open_web)
 
-        # سجل اتصال الطلاب المباشر
         log_card = CardBox(orientation='vertical', padding=dp(14), spacing=dp(8), size_hint_y=None, height=dp(260))
         self.lbl_log_head = ArLabel(raw_text="سجل اتصال وحضور الطلاب المباشر", font_size='16sp', bold=True, color=PALETTE["accent"], size_hint_y=None, height=dp(28))
         self.lbl_live_logs = ArLabel(raw_text="في انتظار اتصال الطلاب...", font_size='13sp', color=PALETTE["text_dark"], size_hint_y=None, height=dp(200), halign='right', valign='top')
@@ -1269,7 +1343,7 @@ class AdminHubScreen(BaseScreen):
         self.qr_card = CardBox(orientation='vertical', padding=dp(16), spacing=dp(12))
         self.lbl_qr_title = ArLabel(raw_text="امسح الباركود بكاميرا هاتف الطالب للدخول", font_size='17sp', bold=True, color=PALETTE["primary_dark"], size_hint_y=None, height=dp(34))
         self.qr_img = Image(size_hint=(1, 0.65), allow_stretch=True, keep_ratio=True)
-        self.lbl_qr_url = ArLabel(raw_text="", font_size='14sp', bold=True, color=PALETTE["primary"], size_hint_y=None, height=dp(40))
+        self.lbl_qr_url = Label(text="", font_size='14sp', bold=True, color=PALETTE["primary"], size_hint_y=None, height=dp(40))
         btn_refresh_qr = ModernButton(raw_text="تحديث الباركود وعنوان الشبكة", bg_color=PALETTE["accent"], size_hint_y=None, height=dp(46), font_size='15sp')
         btn_refresh_qr.bind(on_press=lambda *_: self._generate_qr_image())
 
@@ -1285,7 +1359,7 @@ class AdminHubScreen(BaseScreen):
             url = f"http://{ip}:8080/attendance.html?open={cfg['open']}&s={cfg.get('s', '')}"
         else:
             url = f"http://{ip}:8080/go"
-        self.lbl_qr_url.set_raw(url)
+        self.lbl_qr_url.text = url
         try:
             import qrcode
             qr = qrcode.QRCode(box_size=8, border=2)
@@ -1312,8 +1386,8 @@ class AdminHubScreen(BaseScreen):
         if self.name != "admin_hub":
             return
         ip = get_real_ip()
-        all_ips = ", ".join(get_local_ips()[:4])
-        state = "يعمل بنشاط (Online)" if SERVER_RUNNING else "جارٍ التهيئة"
+        all_ips = " - ".join(get_local_ips()[:4])
+        state = "يعمل بنشاط" if SERVER_RUNNING else "جارٍ التهيئة"
         total_reg = 0
         if os.path.exists(DATA_FILE):
             try:
@@ -1321,18 +1395,18 @@ class AdminHubScreen(BaseScreen):
                     total_reg = len(json.load(f))
             except Exception:
                 pass
-        info = f"حالة السيرفر: {state}\nIP الرئيسي: {ip}:8080\nشبكات متاحة: {all_ips}\nالنشط حالياً: {len(active_ips)} | إجمالي المسجلين: {total_reg}"
+        info = f"حالة السيرفر: {state}\nالعنوان الرئيسي: {ip}:8080\nشبكات متاحة: {all_ips}\nالنشط حالياً: {len(active_ips)} | إجمالي المسجلين: {total_reg}"
         self.lbl_srv_info.set_raw(info)
 
         if recent_connections:
             lines = []
             for ev in recent_connections[:8]:
-                lines.append(f"[{ev['time']}] {ev['ip']} -> {ev['status']} {ev['detail']}")
+                lines.append(f"{ev['time']} - {ev['ip']} : {ev['status']} {ev['detail']}")
             self.lbl_live_logs.set_raw("\n".join(lines))
 
     def refresh_texts(self):
         super().refresh_texts()
-        for w in (self.tab_srv, self.tab_dash, self.tab_qr, self.lbl_srv_head, self.lbl_srv_info, self.lbl_log_head, self.lbl_live_logs, self.lbl_qr_title, self.lbl_qr_url):
+        for w in (self.tab_srv, self.tab_dash, self.tab_qr, self.lbl_srv_head, self.lbl_srv_info, self.lbl_log_head, self.lbl_live_logs, self.lbl_qr_title):
             w.update_lang()
 
 # شاشة 4: الإعدادات (تغيير اللغة + رقم الإصدار)
@@ -1345,14 +1419,14 @@ class SettingsScreen(BaseScreen):
 
         lang_row = BoxLayout(orientation='horizontal', spacing=dp(10), size_hint_y=None, height=dp(50))
         self.btn_ar = ModernButton(raw_text="اللغة العربية", bg_color=PALETTE["primary"])
-        self.btn_en = ModernButton(raw_text="English", bg_color=PALETTE["text_muted"])
+        self.btn_en = ModernButton(raw_text="انجليزي", bg_color=PALETTE["text_muted"])
         self.btn_ar.bind(on_press=lambda *_: self._set_lang("ar"))
         self.btn_en.bind(on_press=lambda *_: self._set_lang("en"))
         lang_row.add_widget(self.btn_en)
         lang_row.add_widget(self.btn_ar)
 
-        self.lbl_ver = ArLabel(raw_text=f"إصدار التطبيق: {APP_VERSION}", font_size='15sp', bold=True, color=PALETTE["accent"], size_hint_y=None, height=dp(32))
-        self.lbl_dev = ArLabel(raw_text="تطوير: د.م/ محمود منصور - الكلية التكنولوجية بالمحلة", font_size='13sp', color=PALETTE["text_muted"], size_hint_y=None, height=dp(30))
+        self.lbl_ver = ArLabel(raw_text="إصدار التطبيق: 2.5.0 برو", font_size='15sp', bold=True, color=PALETTE["accent"], size_hint_y=None, height=dp(32))
+        self.lbl_dev = ArLabel(raw_text="تطوير: د.م محمود منصور - الكلية التكنولوجية بالمحلة", font_size='13sp', color=PALETTE["text_muted"], size_hint_y=None, height=dp(30))
 
         self.btn_logout_admin = ModernButton(raw_text="تسجيل خروج الأدمن", bg_color=PALETTE["danger"], size_hint_y=None, height=dp(46))
         self.btn_logout_admin.bind(on_press=self._logout_admin)
@@ -1384,7 +1458,7 @@ class SettingsScreen(BaseScreen):
         for w in (self.lbl_title, self.lbl_lang, self.btn_ar, self.btn_en, self.lbl_ver, self.lbl_dev, self.btn_logout_admin):
             w.update_lang()
 
-# شاشة 5: اتصل بنا (أيقونات وروابط السوشيال ميديا)
+# شاشة 5: اتصل بنا (أيقونات وروابط السوشيال ميديا بدون أي مربعات)
 class ContactScreen(BaseScreen):
     def __init__(self, app_ref, **kwargs):
         super().__init__(app_ref, **kwargs)
@@ -1394,17 +1468,17 @@ class ContactScreen(BaseScreen):
 
         header_card = CardBox(orientation='vertical', padding=dp(16), spacing=dp(8), size_hint_y=None, height=dp(135))
         self.lbl_title = ArLabel(raw_text="تواصل معنا والدعم الفني", font_size='19sp', bold=True, color=PALETTE["primary_dark"], size_hint_y=None, height=dp(34))
-        self.lbl_sub = ArLabel(raw_text="د.م/ محمود منصور\nالكلية التكنولوجية بالمحلة الكبرى - المعهد الصناعي", font_size='14sp', color=PALETTE["text_muted"], size_hint_y=None, height=dp(55))
+        self.lbl_sub = ArLabel(raw_text="د.م محمود منصور\nالكلية التكنولوجية بالمحلة الكبرى - المعهد الصناعي", font_size='14sp', color=PALETTE["text_muted"], size_hint_y=None, height=dp(55))
         header_card.add_widget(self.lbl_title)
         header_card.add_widget(self.lbl_sub)
         box.add_widget(header_card)
 
         socials = [
-            ("منصة X (تويتر)", "https://twitter.com/eng_mahmoud_man?s=07", (0.08, 0.09, 0.11, 1)),
-            ("حساب GitHub للمشاريع", "https://github.com/natiga-script", (0.14, 0.16, 0.18, 1)),
-            ("صفحة فيسبوك Facebook", "https://www.facebook.com/profile.php?id=100009579078219", (0.09, 0.46, 0.95, 1)),
-            ("حساب لينكد إن LinkedIn", "https://www.linkedin.com/in/eng-mahmoud-mansour", (0.04, 0.40, 0.76, 1)),
-            ("حساب انستجرام Instagram", "https://www.instagram.com/eng_mahmoud_mansour/", (0.83, 0.18, 0.47, 1)),
+            ("منصة تويتر إكس", "https://twitter.com/eng_mahmoud_man?s=07", (0.08, 0.09, 0.11, 1)),
+            ("حساب جيت هاب للمشاريع", "https://github.com/natiga-script", (0.14, 0.16, 0.18, 1)),
+            ("صفحة فيسبوك الرسمية", "https://www.facebook.com/profile.php?id=100009579078219", (0.09, 0.46, 0.95, 1)),
+            ("حساب لينكد إن المهني", "https://www.linkedin.com/in/eng-mahmoud-mansour", (0.04, 0.40, 0.76, 1)),
+            ("حساب انستجرام الرسمي", "https://www.instagram.com/eng_mahmoud_mansour/", (0.83, 0.18, 0.47, 1)),
         ]
         self.social_btns = []
         for title, url, col in socials:
@@ -1423,7 +1497,7 @@ class ContactScreen(BaseScreen):
         for b in self.social_btns:
             b.update_lang()
 
-# --- 6. التطبيق الرئيسي ---
+# --- 6. التطبيق الرئيسي وعرض صفحات الويب الكاملة داخل التطبيق (WebView) ---
 class MainApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -1447,14 +1521,14 @@ class MainApp(App):
         if hasattr(self, "sm") and self.sm.has_screen(name):
             self.sm.current = name
 
-    def open_in_app_webview(self, path='/admin'):
-        """فتح لوحة تحكم الأدمن داخل التطبيق مباشرة دون الخروج لمتصفح خارجي"""
+    def open_in_app_webview(self, path='/admin', base_url='http://127.0.0.1:8080'):
+        """فتح صفحة الأدمن أو الطالب الكاملة داخل التطبيق بنفس تنسيق المتصفح تماماً"""
+        target_url = base_url.rstrip('/') + path
         try:
             from jnius import autoclass, PythonJavaClass, java_method
             from android.runnable import run_on_ui_thread
         except Exception:
-            # في حال التشغيل على ويندوز/لينكس للاختبار
-            webbrowser.open('http://127.0.0.1:8080' + path)
+            webbrowser.open(target_url)
             return
 
         app = self
@@ -1468,27 +1542,37 @@ class MainApp(App):
         @run_on_ui_thread
         def show():
             try:
+                # إغلاق أي WebView سابق إن وجد
+                if getattr(app, '_android_webview_frame', None) is not None:
+                    parent = app._android_webview_frame.getParent()
+                    if parent is not None:
+                        parent.removeView(app._android_webview_frame)
+
                 PythonActivity = autoclass('org.kivy.android.PythonActivity')
                 FrameLayout = autoclass('android.widget.FrameLayout')
                 LinearLayout = autoclass('android.widget.LinearLayout')
                 AndroidButton = autoclass('android.widget.Button')
                 WebView = autoclass('android.webkit.WebView')
                 WebViewClient = autoclass('android.webkit.WebViewClient')
+                WebChromeClient = autoclass('android.webkit.WebChromeClient')
                 LayoutParams = autoclass('android.view.ViewGroup$LayoutParams')
                 Color = autoclass('android.graphics.Color')
                 activity = PythonActivity.mActivity
 
                 frame = FrameLayout(activity)
+                frame.setBackgroundColor(Color.WHITE)
                 column = LinearLayout(activity)
                 column.setOrientation(1)
+
                 bar = LinearLayout(activity)
                 bar.setOrientation(0)
                 bar.setBackgroundColor(Color.parseColor('#0F172A'))
+                bar.setPadding(16, 12, 16, 12)
 
                 close_btn = AndroidButton(activity)
                 close_btn.setText('رجوع إلى التطبيق')
                 close_btn.setTextColor(Color.WHITE)
-                close_btn.setTextSize(16.0)
+                close_btn.setTextSize(15.0)
                 close_btn.setAllCaps(False)
                 close_btn.setBackgroundColor(Color.parseColor('#1D4ED8'))
                 bar.addView(close_btn, LinearLayout.LayoutParams(-1, -2))
@@ -1500,17 +1584,23 @@ class MainApp(App):
                 settings.setDomStorageEnabled(True)
                 settings.setDatabaseEnabled(True)
                 settings.setAllowFileAccess(True)
+                settings.setUseWideViewPort(True)
+                settings.setLoadWithOverviewMode(True)
+                settings.setBuiltInZoomControls(True)
+                settings.setDisplayZoomControls(False)
                 web.setWebViewClient(WebViewClient())
+                web.setWebChromeClient(WebChromeClient())
+
                 column.addView(web, LinearLayout.LayoutParams(-1, 0, 1.0))
                 frame.addView(column, FrameLayout.LayoutParams(-1, -1))
 
                 listener = CloseListener()
                 close_btn.setOnClickListener(listener)
                 activity.addContentView(frame, LayoutParams(-1, -1))
-                self._android_webview = web
-                self._android_webview_frame = frame
-                self._android_webview_listener = listener
-                web.loadUrl('http://127.0.0.1:8080' + path)
+                app._android_webview = web
+                app._android_webview_frame = frame
+                app._android_webview_listener = listener
+                web.loadUrl(target_url)
             except Exception as exc:
                 print('WEBVIEW_ERR:', exc)
 
